@@ -24,6 +24,15 @@ Por eso el repositorio tiene el código completo pero no arranca solo: los datos
 6. Actualizar `ESTADO.md` separando: **comprobado en la PC real**, **probado fuera de la PC**, **sin probar**.
 7. Si el cambio toca el servidor o las pantallas, hace falta reiniciar (`REINICIAR-SERVIDOR.cmd`); decirlo.
 
+## Dos herramientas a la vez (Claude y ChatGPT/Codex)
+
+- **Reparto fijo.** Claude: correo, lectura de planillas, pantalla de guardias, Personal, publicación en internet. ChatGPT/Codex: entrada de fotos de pizarras, su lectura, cruce con laboratorio y planillas de pacientes por servicio. Para tocar algo del otro, primero se anota en `ESTADO.md`.
+- **Antes de empezar:** leer el "Registro de cambios" al final de `ESTADO.md` y trabajar sobre los archivos tal como están en la carpeta de la PC.
+- **Al terminar:** agregar una línea al registro con fecha, quién, archivos tocados, qué se probó y si hace falta reiniciar.
+- **Archivos compartidos** (`server/app.mjs`, `server/start.mjs`, `scripts/start-secure.ps1`, `package.json`): cambios chicos y puntuales, nunca reescribir el archivo entero.
+- **GitHub lo actualiza uno solo:** Claude copia la carpeta de la PC al repositorio después de cada cambio registrado. Codex no hace `git push` ni `git reset` en la carpeta de la PC.
+- Nadie borra ni revierte trabajo del otro. Si algo del otro parece mal, se anota en `ESTADO.md` y se le avisa a Sebastián.
+
 ## Comandos de verificación
 
 ```

@@ -61,3 +61,10 @@ Actualizado: 5 de octubre de 2026.
 - El respaldo de `var/` y de `server/session.secret` no existe fuera de la PC. Sin esa clave no se pueden abrir contactos, domicilios ni mensajes cifrados.
 - La lectura de pizarras guarda el resultado como "no publicada": no actualiza camas ni pacientes.
 - Precio del combustible del mapa: fijo (YPF Mendoza, 28/09/2026).
+
+## Registro de cambios
+
+Una línea por cambio: fecha · quién · archivos · qué se probó · reiniciar sí/no.
+
+- 5/10/2026 · Claude · `scripts/ingest_pending.py`, `server/auth.mjs`, `server/app.mjs`, `deploy/*`, `scripts/exportar-env.mjs`, `scripts/start-secure.ps1`, `PREPARAR-PUBLICACION.cmd` · lector corrido en la PC real (91 planillas), pruebas de servidor y pantallas, imagen de publicación con datos de prueba · reiniciar sí.
+- 5/10/2026 · Claude · `ESTADO.md`, `WHATSAPP_README.md`, `REGLAS.md` · sólo documentación · reiniciar no.
