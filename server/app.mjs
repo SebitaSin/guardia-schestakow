@@ -126,7 +126,8 @@ export function createHospitalServer({ distDir, dataDir, catalogFile = null, int
     securityHeaders(res);
     const origin = `http://${req.headers.host ?? "127.0.0.1"}`;
     const url = new URL(req.url ?? "/", origin);
-    const ip = req.socket.remoteAddress ?? "unknown";
+    const forwarded = authConfig.trustProxy ? String(req.headers["x-forwarded-for"] ?? "").split(",").pop().trim() : "";
+    const ip = forwarded || (req.socket.remoteAddress ?? "unknown");
     try {
       if (url.pathname === "/api/health" && req.method === "GET") return json(res, 200, { ok: true });
 

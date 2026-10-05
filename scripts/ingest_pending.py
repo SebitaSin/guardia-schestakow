@@ -11,6 +11,7 @@ import calendar
 import json
 import os
 import re
+import struct
 import sys
 import tempfile
 import unicodedata
@@ -24,7 +25,10 @@ APP_ROOT = Path(os.environ.get("APP_ROOT", Path(__file__).resolve().parents[1]))
 DATA_DIR = Path(os.environ.get("APP_DATA_DIR", APP_ROOT / "var")).resolve()
 MAIL_DIR = DATA_DIR / "mail"
 OUT_DIR = Path(os.environ.get("APP_CATALOG_DIR", DATA_DIR / "catalog")).resolve()
-PARSER_VERSION = 3
+PARSER_VERSION = 4
+# Lo que no se pudo leer y llegó antes de esta fecha es historia: no se procesa ni se lista como pendiente.
+# Todo lo que llega desde esta fecha se procesa siempre.
+BACKLOG_BEFORE = date(2026, 9, 21)
 
 MONTHS = {"ENERO": 1, "FEBRERO": 2, "MARZO": 3, "ABRIL": 4, "MAYO": 5, "JUNIO": 6, "JULIO": 7, "AGOSTO": 8,
           "SEPTIEMBRE": 9, "SETIEMBRE": 9, "OCTUBRE": 10, "NOVIEMBRE": 11, "DICIEMBRE": 12}
@@ -124,6 +128,135 @@ def read_docx(path: Path) -> tuple[list[str], list[list[list[str]]]]:
         elif child.tag == W + "tbl":
             tables.append(_docx_table(child))
     return paragraphs, tables
+
+
+def _ole_stream_reader(data: bytes):
+    """Lector mínimo de archivos compuestos de Office 97-2003 (sólo lo necesario para Word)."""
+    if data[:8] != b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        raise ValueError("no es un archivo compuesto")
+    size = 1 << struct.unpack_from("<H", data, 30)[0]
+    mini_size = 1 << struct.unpack_from("<H", data, 32)[0]
+    fat_count, dir_start, _, cutoff, minifat_start, _, difat_start, difat_count = struct.unpack_from("<8I", data, 44)
+    per_sector = size // 4
+
+    def sector(index: int) -> bytes:
+        return data[(index + 1) * size:(index + 2) * size]
+
+    difat = list(struct.unpack_from("<109I", data, 76))
+    while difat_start < 0xFFFFFFFC and difat_count > 0:
+        block = struct.unpack(f"<{per_sector}I", sector(difat_start))
+        difat += block[:-1]
+        difat_start = block[-1]
+        difat_count -= 1
+    fat: list[int] = []
+    for index in difat[:fat_count]:
+        if index < 0xFFFFFFFC:
+            fat += struct.unpack(f"<{per_sector}I", sector(index))
+
+    def chain(start: int, table) -> list[int]:
+        out: list[int] = []
+        while start < 0xFFFFFFFC and start < len(table) and len(out) <= len(table):
+            out.append(start)
+            start = table[start]
+        return out
+
+    def big(start: int) -> bytes:
+        return b"".join(sector(index) for index in chain(start, fat))
+
+    directory = big(dir_start)
+    entries: dict[str, tuple[int, int]] = {}
+    root = (0xFFFFFFFE, 0)
+    for offset in range(0, len(directory) - 127, 128):
+        entry = directory[offset:offset + 128]
+        length = struct.unpack_from("<H", entry, 64)[0]
+        if length < 2:
+            continue
+        name = entry[:length - 2].decode("utf-16-le", "replace")
+        start, stream_size = struct.unpack_from("<II", entry, 116)
+        if entry[66] == 5:
+            root = (start, stream_size)
+        else:
+            entries[name] = (start, stream_size)
+    mini = big(root[0])[:root[1]]
+    raw_minifat = big(minifat_start) if minifat_start < 0xFFFFFFFC else b""
+    minifat = struct.unpack(f"<{len(raw_minifat) // 4}I", raw_minifat)
+
+    def stream(name: str) -> bytes:
+        start, stream_size = entries[name]
+        if stream_size < cutoff:
+            return b"".join(mini[i * mini_size:(i + 1) * mini_size] for i in chain(start, minifat))[:stream_size]
+        return big(start)[:stream_size]
+
+    return stream
+
+
+def _doc_text(data: bytes) -> str:
+    stream = _ole_stream_reader(data)
+    word = stream("WordDocument")
+    if struct.unpack_from("<H", word, 0)[0] != 0xA5EC:
+        raise ValueError("no es Word 97-2003")
+    flags = struct.unpack_from("<H", word, 10)[0]
+    if flags & 0x0100:
+        raise ValueError("documento protegido")
+    table = stream("1Table" if flags & 0x0200 else "0Table")
+    main_length = struct.unpack_from("<i", word, 0x4C)[0]
+    clx_start, clx_length = struct.unpack_from("<II", word, 0x1A2)
+    clx = table[clx_start:clx_start + clx_length]
+    pos, parts = 0, []
+    while pos < len(clx):
+        if clx[pos] == 1:
+            pos += 3 + struct.unpack_from("<H", clx, pos + 1)[0]
+            continue
+        if clx[pos] != 2:
+            break
+        length = struct.unpack_from("<I", clx, pos + 1)[0]
+        pieces = clx[pos + 5:pos + 5 + length]
+        count = (length - 4) // 12
+        bounds = struct.unpack_from(f"<{count + 1}I", pieces, 0)
+        for index in range(count):
+            where = struct.unpack_from("<I", pieces, (count + 1) * 4 + index * 8 + 2)[0]
+            chars = bounds[index + 1] - bounds[index]
+            if where & 0x40000000:
+                start = (where & 0x3FFFFFFF) // 2
+                parts.append(word[start:start + chars].decode("cp1252", "replace"))
+            else:
+                parts.append(word[where:where + chars * 2].decode("utf-16-le", "replace"))
+        break
+    if not parts:
+        raise ValueError("sin texto")
+    return "".join(parts)[:main_length]
+
+
+def _doc_lines(text: str) -> list[str]:
+    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text)
+    return [line.strip() for line in re.split(r"[\r\n]", cleaned) if line.strip()]
+
+
+def read_doc(path: Path) -> tuple[list[str], list[list[list[str]]]]:
+    """Word 97-2003 (.doc). En el texto cada celda termina en \\x07 y cada fila lleva una marca más.
+
+    Sin las propiedades de párrafo no se distingue una celda vacía de un fin de fila, así que el ancho
+    se toma de la primera fila (el encabezado) y se exige que todas las filas cierren igual. Si no
+    cierran, no se devuelve nada: es preferible dejar el servicio en blanco a leer corrido de columna.
+    """
+    tokens = _doc_text(path.read_bytes()).split("\x07")
+    if len(tokens) < 4:
+        return _doc_lines(tokens[0]), []
+    tail = tokens.pop()
+    first = _doc_lines(tokens[0])
+    titles, tokens[0] = first[:-1], (first[-1] if first else "")
+    width = next((index for index, token in enumerate(tokens) if not token.strip()), 0)
+    if width < 2:
+        return titles + _doc_lines(tail), []
+    rows, pos = [], 0
+    while pos < len(tokens):
+        row = tokens[pos:pos + width]
+        mark = tokens[pos + width] if pos + width < len(tokens) else None
+        if len(row) < width or mark is None or mark.strip():
+            return titles + _doc_lines(tail), []
+        rows.append(["\n".join(_doc_lines(cell)) for cell in row])
+        pos += width + 1
+    return titles + _doc_lines(tail), [rows]
 
 
 def _col_index(ref: str) -> int:
@@ -548,10 +681,13 @@ def read_attachment(path: Path, item: dict) -> dict:
         elif head[:2] == b"PK" and suffix == ".xlsx":
             titles, tables = read_xlsx(path)
             file_type = "xlsx"
+        elif head.startswith(b"\xd0\xcf\x11\xe0") and suffix == ".doc" and (mail_day(item) or date.today()) >= BACKLOG_BEFORE:
+            titles, tables = read_doc(path)
+            file_type = "doc"
         else:
             kind = "foto" if head[:3] == b"\xff\xd8\xff" or head.startswith(b"\x89PNG") else "formato antiguo de Office" if head.startswith(b"\xd0\xcf\x11\xe0") else "formato"
             return {"reason": f"{kind}: todavía sin lector automático"}
-    except (zipfile.BadZipFile, KeyError, ET.ParseError):
+    except (zipfile.BadZipFile, KeyError, ET.ParseError, struct.error, ValueError, IndexError):
         return {"reason": "archivo dañado o protegido"}
     except Exception as exc:
         if head.startswith(b"%PDF"):
@@ -789,8 +925,11 @@ def run() -> dict:
     # Si el mismo cronograma llega más de una vez, vale el correo más nuevo.
     documents.sort(key=lambda d: d["source"]["mailDate"], reverse=True)
     mark_superseded(documents)
+    limit = BACKLOG_BEFORE.isoformat()
+    backlog = [entry for entry in unread if entry["mailDate"] < limit]
+    unread = [entry for entry in unread if entry["mailDate"] >= limit]
     live = {"generatedAt": datetime.now().astimezone().isoformat(timespec="seconds"), "parser": PARSER_VERSION,
-            "documents": documents, "unread": unread}
+            "documents": documents, "unread": unread, "backlog": backlog}
     atomic_json(OUT_DIR / "live.json", live)
     return {"read": len(documents), "unread": len(unread), "at": live["generatedAt"]}
 

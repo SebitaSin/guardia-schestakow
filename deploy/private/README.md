@@ -1,11 +1,7 @@
-# Archivos privados de producción
+# Archivos privados de publicación
 
-Esta carpeta no se versiona ni se comparte. En el servidor remoto debe contener:
+Esta carpeta no se sube a GitHub ni se comparte.
 
-- `users.json`: usuarios, roles y hashes scrypt. Parta de `server/users.example.json`; no use cuentas ni claves de prueba.
-- `catalog.json`: catálogo/cronograma operativo aprobado.
-- `internacion.json`: parte de camas autorizado y vigente.
-- `google-maps-browser-key.txt`: clave de navegador restringida al dominio público.
-- `google-maps-server-key.txt`: clave de servidor restringida a Geocoding API y a la IP del servidor.
+- `produccion.env`: lo crea `PREPARAR-PUBLICACION.cmd`. Tiene las claves, el correo y los usuarios.
 
-Transfiera los cinco archivos por un canal institucional seguro. Los archivos clínicos y las claves no deben ir a un repositorio público, correo personal, servicio estático ni chat.
+Junto con ese archivo, al servidor va la carpeta `var` completa (se monta en `/data`).

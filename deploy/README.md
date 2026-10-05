@@ -1,20 +1,34 @@
-# Despliegue remoto privado — Schestakow Libre
+# Publicar la app en internet
 
-Este paquete permite que la aplicación siga funcionando si esta PC está apagada: se ejecuta en un servidor remoto con un dominio HTTPS propio, login de la aplicación, disco persistente y datos de operación montados fuera de la imagen.
+Objetivo: abrirla con un enlace desde cualquier dispositivo, con la PC del hospital apagada. Todavía no hay proveedor elegido; esto sirve para cualquiera que cumpla tres cosas:
 
-## Condiciones obligatorias
+1. Corre un contenedor Docker encendido todo el tiempo.
+2. Tiene un disco que no se borra al reiniciar (se monta en `/data`).
+3. Da una dirección HTTPS (propia del proveedor o un dominio).
 
-1. Servidor Linux administrado, con Docker/Compose, disco cifrado, actualizaciones, copia de seguridad y recuperación probada.
-2. Dominio propio con registro DNS `A` (y `AAAA` si existe IPv6) dirigido al servidor; los puertos 80 y 443 deben estar abiertos para HTTPS.
-3. Acceso institucional autorizado. La aplicación no es pública: cada persona usa su cuenta y los datos privados se restringen por rol.
-4. Cree `deploy/.env` desde `.env.example` y `deploy/private/` con los tres archivos indicados allí. No cargue claves ni datos clínicos en Git, Vercel, Netlify, correo personal ni chat.
+## Qué se sube
 
-## Inicio y verificación
+| Qué | De dónde sale | Para qué |
+|---|---|---|
+| La imagen | `docker build -f deploy/Dockerfile -t guardia-schestakow .` desde la carpeta de la PC (necesita `src/data`, que no está en GitHub) | La app completa: pantallas, servidor, lector de correo y planillas |
+| `deploy/private/produccion.env` | Doble clic en `PREPARAR-PUBLICACION.cmd` | Claves y usuarios, como variables de entorno |
+| La carpeta `var` completa | La PC | Va al disco `/data`: correo, planillas leídas, contactos y mensajes |
 
-Desde `deploy/`, ejecute `docker compose up -d --build`. Compruebe primero `https://<dominio>/api/health` y luego inicio de sesión en una ventana privada. La aplicación y sus datos no requieren que esta PC permanezca encendida.
+La clave `APP_SESSION_SECRET` tiene que ser la misma de la PC (el archivo la lleva): con otra no se abren los contactos, domicilios ni mensajes guardados.
 
-Los datos de trabajo, adjuntos, auditoría y contactos cifrados quedan en el volumen `schestakow_data`. Respalde ese volumen cifrado antes de actualizaciones y ensaye una restauración aislada. Para actualizar sin borrar datos: `docker compose up -d --build`.
+## Servidor propio
 
-## Límite de seguridad que queda explícito
+En `deploy/`: crear `.env` con `SCHESTAKOW_DOMAIN` y `TLS_EMAIL`, y correr `docker compose up -d --build`. El proxy saca el certificado HTTPS solo.
 
-La interfaz actual compila un resumen clínico para uso del personal autenticado. Por eso este diseño usa servidor privado y login, no hosting estático. La próxima fase necesaria para privilegio mínimo es terminar de servir camas y laboratorio sólo desde API, por rol, y sacar esos datos del paquete del navegador. No se debe declarar esa fase como realizada sin una auditoría del bundle final.
+## Comprobación
+
+`https://<dominio>/api/health` responde `{"ok":true}`; después ingresar con usuario y contraseña desde un celular.
+
+## Probado y sin probar
+
+- Probado (5/10/2026, con datos de prueba): la imagen se construye; arranca; responde salud; ingresa con usuarios por variable de entorno y cookie segura; el webhook de WhatsApp verifica, acepta un mensaje firmado y rechaza uno sin firma; el lector de correo y de planillas corre adentro; hora de Mendoza.
+- Sin probar: `PREPARAR-PUBLICACION.cmd` en la PC real; la app publicada con los datos reales; Gmail aceptando la conexión desde el servidor nuevo.
+
+## Límite conocido
+
+Las pantallas llevan compilados datos del personal y de internación para quien ingresa con usuario. Todo queda detrás del login; no usar hosting estático (Netlify, Vercel): no corren el servidor.

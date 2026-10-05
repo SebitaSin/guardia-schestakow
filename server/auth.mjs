@@ -42,8 +42,11 @@ export function loadAuthConfig(env = process.env) {
   const secret = String(env.APP_SESSION_SECRET ?? "");
   const usersFile = String(env.APP_USERS_FILE ?? "");
   if (secret.length < 32) throw new Error("APP_SESSION_SECRET must have at least 32 characters");
-  if (!usersFile) throw new Error("APP_USERS_FILE is required");
-  const parsed = JSON.parse(readFileSync(usersFile, "utf8"));
+  // En un servidor de internet muchas veces sólo hay variables de entorno: los usuarios pueden venir
+  // en APP_USERS_B64 (el mismo JSON de users.local.json, en base64) en lugar de un archivo.
+  const inline = String(env.APP_USERS_B64 ?? "").trim();
+  if (!usersFile && !inline) throw new Error("APP_USERS_FILE or APP_USERS_B64 is required");
+  const parsed = JSON.parse(inline ? Buffer.from(inline, "base64").toString("utf8") : readFileSync(usersFile, "utf8"));
   const users = (Array.isArray(parsed) ? parsed : parsed.users).map(validateUser);
   if (!users.length) throw new Error("At least one user is required");
   if (new Set(users.map((u) => u.id.toLowerCase())).size !== users.length) throw new Error("Duplicate user id");
@@ -51,6 +54,8 @@ export function loadAuthConfig(env = process.env) {
     secret,
     users,
     secureCookie: String(env.APP_COOKIE_SECURE ?? "true").toLowerCase() !== "false",
+    // Detrás de un proxy HTTPS todas las conexiones llegan desde el proxy: la IP real viene en X-Forwarded-For.
+    trustProxy: String(env.APP_TRUST_PROXY ?? "false").toLowerCase() === "true",
     sessionHours: Math.max(1, Math.min(24, Number(env.APP_SESSION_HOURS ?? 8) || 8)),
   };
 }

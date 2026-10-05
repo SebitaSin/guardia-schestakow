@@ -1,92 +1,35 @@
-# 🚀 WhatsApp Cloud API - Quick Start
+# WhatsApp: qué falta y en qué orden
 
-## ¿Qué se hizo?
-✅ Integración WhatsApp lista para guardia.mjs  
-✅ Config local funcionando (sin tocar código existente)  
-✅ Documentación completa para producción  
-✅ Tests locales verificando cada parte  
+Actualizado: 5 de octubre de 2026. Reemplaza versiones anteriores de este archivo que decían "listo para producción": no era cierto.
 
-## 🎯 Comienza Aquí
+## Estado real
 
-### 1. Verificar que todo funciona
-```bash
-node server/whatsapp.local-test.mjs
-```
-Debe retornar: `✅ All local tests passed!`
+- El código de la app está: recibe por `/api/whatsapp/webhook` (texto y fotos, con firma de Meta), envía con borrador → aprobación → envío, registra acuses.
+- Nunca recibió ni envió un mensaje real. Lo que falta no es código: es la cuenta de Meta y una dirección pública.
 
-### 2. Iniciar servidor
-```bash
-npm run dev
-```
-Debe mostrar: `Hospital Schestakow listo en http://localhost:8788`
+## Reglas de Meta comprobadas en su documentación (5/10/2026)
 
-### 3. Test rápido
-```bash
-curl http://localhost:8788/api/health
-```
-Esperado: `{"ok":true}`
+1. **Un número activo en la app WhatsApp o WhatsApp Business no se puede registrar en la API.** Hay que eliminar antes la cuenta en el teléfono. Después el número no se usa más desde la app del teléfono. ([números](https://developers.facebook.com/documentation/business-messaging/whatsapp/business-phone-numbers/phone-numbers))
+2. **Usar app y API a la vez ("coexistencia") sólo lo puede activar un proveedor socio de Meta**, no uno mismo desde el panel. Por eso fallaron los intentos. ([coexistencia](https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-business-app-users))
+3. **Los grupos comunes no se pueden leer por la API.** La API de grupos exige cuenta oficial verificada, sólo maneja grupos creados por ella y de hasta 8 personas; con coexistencia tampoco se sincronizan. El grupo "Secretarios de Sala" no se puede conectar: los secretarios tienen que escribirle **directo al 260 405 6998**. ([grupos](https://developers.facebook.com/documentation/business-messaging/whatsapp/groups))
+4. **Costo:** responder dentro de las 24 h desde el último mensaje de la persona es gratis. Sólo se cobran las plantillas enviadas fuera de esa ventana. ([precios](https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing))
+5. **Token permanente:** se genera con un "usuario del sistema" en la configuración del negocio, con permisos `business_management`, `whatsapp_business_management` y `whatsapp_business_messaging`, y con la app y la cuenta de WhatsApp asignadas. ([tokens](https://developers.facebook.com/documentation/business-messaging/whatsapp/access-tokens))
 
-## 📁 Archivos Importantes
+## Camino elegido para no depender de terceros ni pagar proveedor
 
-| Archivo | Propósito |
-|---------|-----------|
-| `.env` | Config local (valores ficticios, NO en git) |
-| `server/whatsapp.mjs` | Core WhatsApp (YA EXISTE) |
-| `server/whatsapp-send.mjs` | Envío de mensajes (YA EXISTE) |
-| `server/whatsapp.local-test.mjs` | Test fixture |
-| `WHATSAPP_LOCAL_TEST.md` | Guía de tests locales |
-| `server/WHATSAPP_PRODUCTION_SETUP.md` | Setup producción |
-| `INTEGRACION_WHATSAPP_COMPLETADA.md` | Resumen completo |
+Decisión que toma Sebastián (no se hace por inferencia): eliminar la cuenta de WhatsApp Business del chip 260 405 6998. Se pierde el historial de ese teléfono y el número sale de los grupos.
 
-## 🔐 Credenciales
+1. Teléfono: WhatsApp Business → Ajustes → Cuenta → Eliminar cuenta.
+2. Meta, Administrador de WhatsApp → Números de teléfono → Agregar número → código por SMS → nombre visible → PIN de dos pasos.
+3. Usuario del sistema → token permanente (regla 5).
+4. Clave secreta de la app: Configuración de la app → Básica.
+5. En la PC: `CONFIGURAR-WHATSAPP.cmd` con secreto de app. Las claves se escriben ahí, nunca en un chat.
+6. Publicar la app (ver `deploy/README.md`). Sin dirección pública HTTPS Meta no puede entregar mensajes.
+7. Meta → WhatsApp → Configuración → Webhook: `https://<dominio>/api/whatsapp/webhook`, token de verificación, suscribir el campo `messages`. Pasar la app de Meta a modo activo.
+8. Pruebas, en este orden: mandar un texto al número y verlo en la app; mandar una foto no clínica; responder desde la app; repetir con la PC apagada.
 
-### Local (Desarrollo)
-```env
-WHATSAPP_VERIFY_TOKEN=LOCAL_VERIFY_TOKEN_DEV_1234567890ABCDEF
-WHATSAPP_ACCESS_TOKEN=LOCAL_ACCESS_TOKEN_DEV_1234567890ABCDEF_XYZW
-WHATSAPP_APP_SECRET=LOCAL_APP_SECRET_DEV_1234567890
-WHATSAPP_PHONE_NUMBER_ID=1234567890123456
-```
-✓ Seguro, valores ficticios
+## Sin probar todavía
 
-### Producción (Cuando tengas dominio)
-1. Leer: `server/WHATSAPP_PRODUCTION_SETUP.md`
-2. Obtener tokens reales de Meta
-3. Cargar variables en hosting
-4. Registrar webhook HTTPS
-
-## 📊 Endpoints Listos
-
-```bash
-GET  /api/health                    # Health check
-GET  /api/whatsapp/webhook          # Webhook verification
-POST /api/whatsapp/webhook          # Receive messages
-GET  /api/whatsapp/inbox            # View messages
-GET  /api/whatsapp/outbox           # View pending
-```
-
-## ⚠️ Importante
-- `.env` NO se comitea a git (.gitignore está configurado)
-- Código existente NO fue modificado
-- Credenciales reales NUNCA se mostrar
-- HTTPS es obligatorio en producción
-
-## 🆘 Problemas?
-
-**"Config incomplete"**  
-→ Verificar .env tiene todas las variables: `node server/whatsapp.local-test.mjs`
-
-**"ECONNREFUSED"**  
-→ Servidor no corre: `npm run dev` en otra terminal
-
-**"Cannot find module"**  
-→ Instalar dependencias: `npm install`
-
-## 🔄 Punto de Retorno
-Si se complica, rollback:
-```bash
-cp _backups/20260930_165226/* .
-```
-
----
-**Documentación completa:** Ver archivos WHATSAPP_*.md
+- Formato argentino 549 / 54 al enviar (el código reintenta sin el 9 ante el error 131030).
+- Plantillas en español aprobadas (`PLANTILLAS-WHATSAPP.md`), necesarias para escribir primero a alguien fuera de las 24 h.
+- La app sólo guarda texto y fotos: audios, PDF y otros tipos que lleguen por WhatsApp hoy se ignoran.

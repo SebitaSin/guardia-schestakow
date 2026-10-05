@@ -11,3 +11,10 @@ deploy/.env
 deploy/private/users.json
 deploy/private/catalog.json
 deploy/private/internacion.json
+_backups
+.git
+docs
+entregas
+outputs
+__pycache__
+deploy/private

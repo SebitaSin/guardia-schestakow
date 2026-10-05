@@ -1,5 +1,7 @@
 param(
-  [ValidateRange(1, 65535)][int]$Port = 8788
+  [ValidateRange(1, 65535)][int]$Port = 8788,
+  # No arranca el servidor: escribe deploy\private\produccion.env para publicar la app en internet.
+  [switch]$ExportarEnv
 )
 
 $ErrorActionPreference = 'Stop'
@@ -92,6 +94,13 @@ if (-not $npm) { throw 'No se encontró Node.js/npm. Instalá Node.js 24 o confi
 
 Push-Location $projectRoot
 try {
+  if ($ExportarEnv) {
+    $node = Join-Path (Split-Path -Parent $npm.Source) 'node.exe'
+    if (-not (Test-Path -LiteralPath $node)) { $node = 'node' }
+    & $node (Join-Path $projectRoot 'scripts\exportar-env.mjs')
+    if ($LASTEXITCODE -ne 0) { throw 'Faltan datos obligatorios para publicar.' }
+    return
+  }
   & $npm.Source run build
   if ($LASTEXITCODE -ne 0) { throw 'La compilación falló.' }
   & $npm.Source run serve
