@@ -2,6 +2,10 @@
 
 Actualizado: 5 de octubre de 2026. Reemplaza versiones anteriores de este archivo que decían "listo para producción": no era cierto.
 
+## Decisión vigente (5/10/2026)
+
+Recibir: **no se usa la API de Meta por ahora.** El número sigue en los tres grupos y las fotos entran por la carpeta del WhatsApp Business del Android, sincronizada a Google Drive del hospital. Detalle en `ESTADO.md`, punto 3. Lo que sigue en este archivo vale para cuando la app tenga que enviar mensajes.
+
 ## Estado real
 
 - El código de la app está: recibe por `/api/whatsapp/webhook` (texto y fotos, con firma de Meta), envía con borrador → aprobación → envío, registra acuses.

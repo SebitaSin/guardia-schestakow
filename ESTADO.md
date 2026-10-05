@@ -26,6 +26,17 @@ Actualizado: 5 de octubre de 2026.
 
 ## 3. WhatsApp
 
+**Camino decidido el 5/10/2026 (Sebastián):** el 260 405 6998 se queda en los tres grupos (mañana, mediodía y tarde-noche), en el WhatsApp Business del Android. No se elimina la cuenta ni se registra el número en Meta por ahora.
+
+- Las fotos de pizarras llegan por los tres grupos. WhatsApp Business las guarda solo en el teléfono (descarga automática activada, batería sin restricciones).
+- Una app de sincronización del Android sube sólo esa carpeta a Google Drive de la cuenta del hospital y la borra del teléfono. Las fotos personales no se tocan.
+- La app de Guardia toma las fotos de ahí. El archivo no trae remitente, grupo ni el texto del mensaje: el servicio se saca de la imagen (habitaciones, pacientes que ya estaban, forma de la pizarra) y el turno M/T/N queda estimado. Lo que no se reconoce con certeza queda pendiente en amarillo.
+- Criterio de terminado: una foto nueva llega, queda en su servicio y turno, genera la planilla, se cruza con laboratorio, muestra las dudas en amarillo con botón Confirmar, y lo confirmado se conserva al recargar y desde otro dispositivo.
+
+**Sin hacer:** instalar la sincronización en el Android; que la app reciba las fotos de esa carpeta; lectura automática de la foto (hoy es a pedido y está apagada); planilla por servicio con confirmación; cruce con laboratorio con datos de octubre (la copia local es del 25/8 al 2/9).
+
+**Lo de abajo (API de Meta) queda para cuando la app tenga que enviar mensajes:**
+
 - Nunca recibió ni envió un mensaje real. Falta: registrar el número en Meta y una dirección pública. Pasos y reglas de Meta comprobadas en `WHATSAPP_README.md`.
 - Bloqueo exacto: el 260 405 6998 está en la app WhatsApp Business y Meta no deja registrarlo así. Hay que eliminar esa cuenta en el teléfono (decisión de Sebastián) o contratar un proveedor socio de Meta.
 - El grupo "Secretarios de Sala" no se puede leer por la API oficial: los secretarios tienen que escribir directo al número.
