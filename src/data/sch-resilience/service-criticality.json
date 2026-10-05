@@ -1,0 +1,13 @@
+{
+  "configuration_version": "crit-v0-unconfigured",
+  "set_by": null,
+  "note": "Dirección must set minima. Until then minimum_staff_required is null (UNKNOWN). The engine reports gaps only when configured.",
+  "services": {
+    "guardia": { "minimum_staff_required": null, "contingency_priority": null },
+    "terapia-intensiva": { "minimum_staff_required": null, "contingency_priority": null },
+    "uco": { "minimum_staff_required": null, "contingency_priority": null },
+    "neonatologia": { "minimum_staff_required": null, "contingency_priority": null },
+    "tip": { "minimum_staff_required": null, "contingency_priority": null },
+    "uccyq": { "minimum_staff_required": null, "contingency_priority": null }
+  }
+}

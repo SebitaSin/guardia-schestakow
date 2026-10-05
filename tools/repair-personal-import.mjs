@@ -1,0 +1,51 @@
+// Source reconciliation: keep stable IDs and user edits. Never print private rows.
+import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { readPrivateContacts, writePrivateContacts } from "../server/private-contacts.mjs";
+import { resolve } from "node:path";
+
+const [csvPath, xlsxPath, python] = process.argv.slice(2);
+if (!csvPath || !xlsxPath || !python) throw new Error("sources_required");
+const result = spawnSync(python, ["-c", 'import csv,json,sys,openpyxl; c=list(csv.DictReader(open(sys.argv[1],encoding="utf-8-sig",newline=""))); w=openpyxl.load_workbook(sys.argv[2],read_only=True,data_only=True); r=w["LISTADO_UNICO"].iter_rows(values_only=True); h=next(r); x=[dict(zip(h,row)) for row in r if any(v is not None for v in row)]; print(json.dumps({"csv":c,"xlsx":x},ensure_ascii=True))', csvPath, xlsxPath], { encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
+if (result.status !== 0) throw new Error("source_read_failed");
+const source = JSON.parse(result.stdout);
+if (source.csv.length !== source.xlsx.length) throw new Error("source_count_mismatch");
+const text = (value) => String(value ?? "").trim();
+const slug = (value) => text(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 70) || "sin-dato";
+const oldText = (value) => Buffer.from(value, "utf8").toString("latin1");
+const dataDir = resolve(process.env.APP_DATA_DIR || "var");
+const secret = process.env.APP_SESSION_SECRET;
+const current = readPrivateContacts(dataDir, secret);
+const used = new Set(current.filter((p) => !p.staffId.startsWith("import-")).map((p) => p.staffId));
+const byId = new Map(current.map((p) => [p.staffId, p]));
+let repaired = 0;
+for (let i = 0; i < source.csv.length; i++) {
+  const csv = source.csv[i], sheet = source.xlsx[i];
+  if (text(csv.Name) !== text(sheet.APELLIDO_NOMBRE) || text(csv.Services) !== text(sheet["SERVICIO(S)"])) throw new Error(`source_alignment_mismatch_row_${i + 2}`);
+  const oldName = oldText(csv.Name), oldService = oldText(csv.Services);
+  const base = `import-${slug(oldName)}-${slug(oldService)}`;
+  let id = base, suffix = 2;
+  while (used.has(id)) id = `${base}-${suffix++}`;
+  used.add(id);
+  const person = byId.get(id);
+  if (!person) throw new Error(`stored_source_record_missing_${i + 2}`);
+  if (person.name === oldName) person.name = text(csv.Name);
+  if (person.service === oldService) person.service = text(csv.Services);
+  if (person.address === oldText(csv.Address)) person.address = text(csv.Address);
+  person.email ??= text(sheet.MAIL);
+  person.dni ??= text(sheet.DNI);
+  person.cuil ??= text(sheet.CUIL);
+  person.role ??= text(sheet.ROL_HSI);
+  person.specialty ??= text(sheet["ESPECIALIDAD(ES)"]);
+  person.mp ??= text(sheet.MP);
+  person.locality ??= text(sheet.LOCALIDAD);
+  person.sectors ??= text(sheet.SECTORES);
+  person.sourceConfidence = text(csv.Confidence);
+  person.sourceNote = text(sheet.MOTIVO_DUDA);
+  person.source = "LISTADO_UNICO · HSI_SR_HSCH_DATOS_FUSION_FINAL_2.xlsx";
+  person.sourceRow = i + 2;
+  repaired++;
+}
+writePrivateContacts(dataDir, secret, current);
+console.log(JSON.stringify({ sourceRows: source.csv.length, reconciled: repaired, totalContacts: current.length, withDni: current.filter((p) => p.dni).length, withEmail: current.filter((p) => p.email).length, sourceCsvSha256: createHash("sha256").update(readFileSync(csvPath)).digest("hex"), sourceXlsxSha256: createHash("sha256").update(readFileSync(xlsxPath)).digest("hex") }));

@@ -1,0 +1,63 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8788
+      APP_DIST_DIR: /app/dist
+      APP_DATA_DIR: /var/lib/schestakow
+      APP_CATALOG_FILE: /private-data/catalog.json
+      APP_INTERNACION_FILE: /private-data/internacion.json
+      APP_USERS_FILE: /run/secrets/sch_users
+      APP_SESSION_SECRET: ${APP_SESSION_SECRET:?Set APP_SESSION_SECRET in .env}
+      APP_COOKIE_SECURE: "true"
+      APP_SESSION_HOURS: ${APP_SESSION_HOURS:-8}
+      GOOGLE_MAPS_API_KEY_FILE: /run/secrets/maps_api_key
+      GOOGLE_ROUTES_API_KEY_FILE: /run/secrets/maps_api_key
+      GMAIL_SYNC_ENABLED: "false"
+      AI_ENABLED: "false"
+    volumes:
+      - schestakow_data:/var/lib/schestakow
+      - ./private/catalog.json:/private-data/catalog.json:ro
+      - ./private/internacion.json:/private-data/internacion.json:ro
+    secrets:
+      - sch_users
+      - maps_api_key
+    networks:
+      - private
+
+  proxy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      SCHESTAKOW_DOMAIN: ${SCHESTAKOW_DOMAIN:?Set SCHESTAKOW_DOMAIN in .env}
+      TLS_EMAIL: ${TLS_EMAIL:?Set TLS_EMAIL in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - private
+
+secrets:
+  sch_users:
+    file: ./private/users.json
+  maps_api_key:
+    file: ./private/google-maps-api-key.txt
+
+volumes:
+  schestakow_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  private:
+    driver: bridge

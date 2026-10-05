@@ -1,0 +1,2 @@
+@echo off
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$l = Get-NetTCPConnection -LocalPort 8788 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if ($l) { $p = Get-Process -Id $l.OwningProcess -ErrorAction SilentlyContinue; if ($p -and $p.ProcessName -eq 'node') { Stop-Process -Id $p.Id -Force; Start-Sleep -Seconds 2 } }; Start-Process -FilePath '%~dp0INICIAR-HOSPITAL-SEGURO.cmd' -WorkingDirectory '%~dp0'"

@@ -1,0 +1,13 @@
+node_modules
+dist
+var
+var-e2e
+.env
+.env.*
+server/users.local.json
+server/session.secret
+server/*.clixml
+deploy/.env
+deploy/private/users.json
+deploy/private/catalog.json
+deploy/private/internacion.json

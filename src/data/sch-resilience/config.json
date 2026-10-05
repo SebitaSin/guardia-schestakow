@@ -1,0 +1,41 @@
+{
+  "model_version": "sch-risk-v1",
+  "geo_model_version": "schestakow-geo-v1",
+  "graph_version": "schestakow-roads-v1",
+  "shadow_mode": true,
+  "release_phase": 4,
+  "timezone": "America/Argentina/Mendoza",
+  "hospital": {
+    "name": "Hospital Schestakow",
+    "city": "San Rafael",
+    "province": "Mendoza",
+    "lat": -34.6175,
+    "lon": -68.3304
+  },
+  "weights": { "H": 0.4, "A": 0.35, "S": 0.25 },
+  "uncertainty_floor": 0.3,
+  "thresholds": {
+    "watch": 25,
+    "prepare": 50,
+    "emergency_requires_human": true
+  },
+  "change": {
+    "precip_mm": 1.0,
+    "wind_kmh": 15,
+    "risk": 5
+  },
+  "horizon_hours": 12,
+  "refresh_minutes": {
+    "NORMAL": 30,
+    "WATCH": 10,
+    "PREPARE": 5,
+    "EMERGENCY": 2,
+    "RECOVERY": 10
+  },
+  "weather_ttl_minutes": 45,
+  "approval_invalidate_risk_delta": 10,
+  "max_detour_minutes": 25,
+  "roles_that_approve": ["DIRECTION"],
+  "roles_that_mark_access": ["DIRECTION", "COORDINATOR"],
+  "roles_that_mark_staff": ["DIRECTION", "COORDINATOR", "STAFF"]
+}

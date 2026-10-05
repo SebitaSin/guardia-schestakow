@@ -1,0 +1,12 @@
+HOSPITAL SCHESTAKOW — VERSIÓN FUNCIONAL PARA DIRECCIÓN
+
+1. Extraiga esta carpeta completa.
+2. Abra INICIAR-PARA-DIRECCION.cmd.
+3. Se abrirá la aplicación en el navegador.
+4. Use el usuario institucional que le fue entregado.
+
+Esta versión conserva las funciones operativas actuales: guardias agrupadas por servicio, búsqueda, archivo, camas,
+internación, continuidad y mapa privado. Las integraciones externas (Google Maps, Gmail, WhatsApp e IA) muestran su
+estado real y no inventan datos cuando todavía no están configuradas.
+
+No comparta esta carpeta por un enlace público: puede contener información hospitalaria privada.

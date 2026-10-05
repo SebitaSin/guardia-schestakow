@@ -1,0 +1,20 @@
+{
+  "geo_model_version": "schestakow-geo-v1",
+  "source": "STATIC compiled from public geography of San Rafael; not a surveyed DEM",
+  "status": "VALID",
+  "notes": "Elevation/flow are coarse operational hints. UNKNOWN where not surveyed.",
+  "hospital_access": [
+    { "id": "hospital_main", "name": "Acceso principal", "lat": -34.6175, "lon": -68.3304, "kind": "access" },
+    { "id": "hospital_emergencias", "name": "Acceso guardia / emergencias", "lat": -34.6172, "lon": -68.3298, "kind": "access" }
+  ],
+  "low_points": [
+    { "id": "bajo_rn143_sur", "name": "Bajo RN 143 sur (histórico)", "water_risk": 70, "confidence": 40, "status": "UNKNOWN" },
+    { "id": "bajo_yrigoyen", "name": "Bajo Av. Yrigoyen (histórico)", "water_risk": 55, "confidence": 35, "status": "UNKNOWN" }
+  ],
+  "channels": [
+    { "id": "diamante", "name": "Río Diamante / zona de ribera", "water_risk": 40, "status": "UNKNOWN" }
+  ],
+  "historic_flooding": [
+    { "id": "hist_sur", "name": "Acumulación histórica acceso sur", "status": "UNKNOWN" }
+  ]
+}

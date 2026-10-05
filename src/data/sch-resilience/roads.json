@@ -1,0 +1,32 @@
+{
+  "graph_version": "schestakow-roads-v1",
+  "source": "STATIC schematic — not live traffic",
+  "nodes": [
+    { "id": "hospital_main", "name": "Hospital acceso principal", "kind": "hospital", "x": 50, "y": 48 },
+    { "id": "hospital_emergencias", "name": "Hospital emergencias", "kind": "hospital", "x": 56, "y": 44 },
+    { "id": "terminal", "name": "Terminal de ómnibus", "kind": "pickup", "x": 42, "y": 62 },
+    { "id": "plaza_sm", "name": "Plaza San Martín", "kind": "pickup", "x": 48, "y": 58 },
+    { "id": "yrigoyen", "name": "Av. Hipólito Yrigoyen", "kind": "intersection", "x": 44, "y": 50 },
+    { "id": "balloffet", "name": "Av. Balloffet", "kind": "intersection", "x": 52, "y": 40 },
+    { "id": "mitre", "name": "Av. Mitre", "kind": "intersection", "x": 38, "y": 46 },
+    { "id": "rn143_norte", "name": "RN 143 norte", "kind": "intersection", "x": 50, "y": 18 },
+    { "id": "rn143_sur", "name": "RN 143 sur", "kind": "intersection", "x": 52, "y": 82 },
+    { "id": "rn144_oeste", "name": "RN 144 oeste", "kind": "intersection", "x": 18, "y": 50 },
+    { "id": "las_paredes", "name": "Las Paredes", "kind": "zone", "x": 28, "y": 22 },
+    { "id": "cuadro_nacional", "name": "Cuadro Nacional", "kind": "zone", "x": 70, "y": 78 }
+  ],
+  "edges": [
+    { "id": "e_em_main", "from": "hospital_emergencias", "to": "hospital_main", "km": 0.4, "min": 3, "water_risk": 20, "closure_state": "OPEN" },
+    { "id": "e_main_bal", "from": "hospital_main", "to": "balloffet", "km": 0.8, "min": 4, "water_risk": 25, "closure_state": "OPEN" },
+    { "id": "e_main_yri", "from": "hospital_main", "to": "yrigoyen", "km": 0.7, "min": 4, "water_risk": 40, "closure_state": "UNKNOWN" },
+    { "id": "e_yri_plaza", "from": "yrigoyen", "to": "plaza_sm", "km": 0.6, "min": 4, "water_risk": 35, "closure_state": "UNKNOWN" },
+    { "id": "e_plaza_term", "from": "plaza_sm", "to": "terminal", "km": 0.8, "min": 5, "water_risk": 30, "closure_state": "OPEN" },
+    { "id": "e_yri_mitre", "from": "yrigoyen", "to": "mitre", "km": 1.1, "min": 6, "water_risk": 30, "closure_state": "OPEN" },
+    { "id": "e_mitre_144", "from": "mitre", "to": "rn144_oeste", "km": 3.5, "min": 8, "water_risk": 35, "closure_state": "UNKNOWN" },
+    { "id": "e_bal_143n", "from": "balloffet", "to": "rn143_norte", "km": 4.2, "min": 9, "water_risk": 25, "closure_state": "OPEN" },
+    { "id": "e_term_143s", "from": "terminal", "to": "rn143_sur", "km": 3.8, "min": 9, "water_risk": 70, "closure_state": "UNKNOWN" },
+    { "id": "e_143s_cn", "from": "rn143_sur", "to": "cuadro_nacional", "km": 8, "min": 14, "water_risk": 60, "closure_state": "UNKNOWN" },
+    { "id": "e_143n_lp", "from": "rn143_norte", "to": "las_paredes", "km": 7, "min": 12, "water_risk": 30, "closure_state": "UNKNOWN" },
+    { "id": "e_144_lp", "from": "rn144_oeste", "to": "las_paredes", "km": 6, "min": 11, "water_risk": 45, "closure_state": "UNKNOWN" }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "source": "STATIC public meeting points — not homes",
+  "points": [
+    { "id": "hospital_emergencias", "name": "Puerta de Guardia", "node": "hospital_emergencias" },
+    { "id": "hospital_main", "name": "Acceso principal", "node": "hospital_main" },
+    { "id": "terminal", "name": "Terminal de ómnibus", "node": "terminal" },
+    { "id": "plaza_sm", "name": "Plaza San Martín", "node": "plaza_sm" }
+  ]
+}
