@@ -28,19 +28,22 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
   const appPort = Number(process.env.APP_PORT || 8788), proxyPort = Number(process.env.ENLACE_PORT || 8790);
   const exe = process.argv[2] || "cloudflared";
-  const alive = await fetch(`http://127.0.0.1:${appPort}/mis-datos`).then((r) => r.status === 200).catch(() => false);
-  if (!alive) { console.log("\n  La app no tiene la ficha activa. Hacé doble clic en \"Reiniciar servidor\", esperá un minuto y volvé a abrir esto.\n"); process.exit(1); }
-  createFormProxy({ appPort }).listen(proxyPort, "127.0.0.1");
-  const tunnel = spawn(exe, ["tunnel", "--no-autoupdate", "--url", `http://127.0.0.1:${proxyPort}`], { stdio: ["ignore", "pipe", "pipe"] });
+  // Con "--app" el enlace abre la app completa (pide usuario y contraseña), para mostrarla desde otro dispositivo.
+  // Sin eso, sólo la ficha del personal.
+  const whole = process.argv.includes("--app");
+  const alive = await fetch(`http://127.0.0.1:${appPort}/${whole ? "api/health" : "mis-datos"}`).then((r) => r.status === 200).catch(() => false);
+  if (!alive) { console.log("\n  La app no está respondiendo. Hacé doble clic en \"Reiniciar servidor\", esperá un minuto y volvé a abrir esto.\n"); process.exit(1); }
+  if (!whole) createFormProxy({ appPort }).listen(proxyPort, "127.0.0.1");
+  const tunnel = spawn(exe, ["tunnel", "--no-autoupdate", "--url", `http://127.0.0.1:${whole ? appPort : proxyPort}`], { stdio: ["ignore", "pipe", "pipe"] });
   let shown = false;
   const watch = (chunk) => {
     const found = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/.exec(String(chunk));
     if (!found || shown) return;
     shown = true;
-    const link = `${found[0]}/mis-datos`;
+    const link = whole ? found[0] : `${found[0]}/mis-datos`;
     mkdirSync(join(root, "var"), { recursive: true });
-    writeFileSync(join(root, "var", "enlace-personal.txt"), `${link}\r\n`, "utf8");
-    console.log(`\n  ENLACE PARA EL PERSONAL:\n\n      ${link}\n\n  Quedó copiado en var\\enlace-personal.txt.\n  Funciona mientras esta ventana siga abierta y la PC prendida.\n  Si cerrás esta ventana, el enlace deja de andar y al abrirla de nuevo sale OTRO distinto.\n`);
+    writeFileSync(join(root, "var", whole ? "enlace-app.txt" : "enlace-personal.txt"), `${link}\r\n`, "utf8");
+    console.log(`\n  ${whole ? "ENLACE DE LA APP COMPLETA (pide usuario y contraseña)" : "ENLACE PARA EL PERSONAL"}:\n\n      ${link}\n\n  Quedó copiado en var\\${whole ? "enlace-app.txt" : "enlace-personal.txt"}.\n  Funciona mientras esta ventana siga abierta y la PC prendida.\n  Si cerrás esta ventana, el enlace deja de andar y al abrirla de nuevo sale OTRO distinto.\n`);
   };
   tunnel.stdout.on("data", watch); tunnel.stderr.on("data", watch);
   tunnel.on("error", () => { console.log("\n  No se pudo iniciar cloudflared.\n"); process.exit(1); });
