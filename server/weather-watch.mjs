@@ -33,7 +33,9 @@ export const GRADOS = [
   { grado: 8, nombre: "Emergencia grave", accion: "Fenómeno extremo inminente: plan de contingencia completo y convocatoria de personal." },
   { grado: 9, nombre: "Catástrofe", accion: "Evento extremo en curso sobre la ciudad: modo catástrofe." },
 ];
-const MATRIX = { 1: [2, 2, 3], 2: [3, 4, 5], 3: [5, 6, 7], 4: [7, 8, 9] };
+// Un fenómeno grave pero sólo "posible" (un modelo, a más de 6 horas) queda en amarillo alto, no en naranja: así lo
+// trata también la matriz británica (impacto alto con probabilidad baja = amarillo).
+const MATRIX = { 1: [2, 2, 3], 2: [3, 4, 5], 3: [4, 6, 7], 4: [6, 8, 9] };
 export const gradeOf = (gravedad, certeza) => MATRIX[Math.max(1, Math.min(4, gravedad))][Math.max(1, Math.min(3, certeza)) - 1];
 export const colorOf = (grado) => (grado >= 7 ? "rojo" : grado >= 5 ? "naranja" : grado >= 3 ? "amarillo" : "verde");
 
@@ -56,15 +58,32 @@ export function inside(point, polygon) {
 }
 
 /** Un aviso CAP del SMN, con su relación al hospital: LOCAL (lo cubre), REGIONAL (a menos de 150 km) o null (lejos). */
+/** Distancia en km de un punto al borde de un polígono (al segmento más cercano, no sólo a los vértices). */
+function edgeKm(point, polygon) {
+  const kx = 111.32 * Math.cos((point.lat * Math.PI) / 180), ky = 110.57;
+  const xy = (p) => ({ x: (p.lon - point.lon) * kx, y: (p.lat - point.lat) * ky });
+  let best = Infinity;
+  for (let i = 0; i < polygon.length; i += 1) {
+    const a = xy(polygon[i]), b = xy(polygon[(i + 1) % polygon.length]);
+    const dx = b.x - a.x, dy = b.y - a.y, len = dx * dx + dy * dy;
+    const t = len ? Math.max(0, Math.min(1, -(a.x * dx + a.y * dy) / len)) : 0;
+    best = Math.min(best, Math.hypot(a.x + t * dx, a.y + t * dy));
+  }
+  return best;
+}
+
 export function parseCap(xml, url, point = HOSPITAL) {
+  // Los avisos a corto plazo del SMN vienen con el prefijo "cap:" en cada etiqueta; las alertas comunes, sin él.
+  xml = String(xml).replace(/<(\/?)cap:/g, "<$1");
+  const shortTerm = /avisocortoplazo/i.test(String(url)) || tag(xml, "urgency") === "Immediate";
   const polygons = [...xml.matchAll(/<polygon>([\s\S]*?)<\/polygon>/g)].map((match) => match[1].trim().split(/\s+/).map((pair) => { const [lat, lon] = pair.split(",").map(Number); return { lat, lon }; }).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon))).filter((polygon) => polygon.length >= 3);
   if (!polygons.length) return null;
   const local = polygons.some((polygon) => inside(point, polygon));
-  const distance = local ? 0 : Math.min(...polygons.flatMap((polygon) => polygon.map((vertex) => km(point, vertex))));
+  const distance = local ? 0 : Math.min(...polygons.map((polygon) => edgeKm(point, polygon)));
   if (!local && distance > REGIONAL_KM) return null;
   const thin = (polygon) => { const step = Math.max(1, Math.ceil(polygon.length / 160)); return polygon.filter((_, index) => index % step === 0).map((p) => [Number(p.lat.toFixed(3)), Number(p.lon.toFixed(3))]); };
   return {
-    evento: decode(tag(xml, "event")) || decode(tag(xml, "headline")), nivel: NIVEL[tag(xml, "severity")] ?? "amarillo", severidad: tag(xml, "severity"),
+    evento: shortTerm ? `Aviso a corto plazo: ${(decode(tag(xml, "description")) || decode(tag(xml, "event"))).toLowerCase()}` : decode(tag(xml, "event")) || decode(tag(xml, "headline")), corto_plazo: shortTerm, zona: decode(tag(xml, "areaDesc")), nivel: NIVEL[tag(xml, "severity")] ?? "amarillo", severidad: tag(xml, "severity"),
     urgencia: tag(xml, "urgency"), certeza: tag(xml, "certainty"), desde: tag(xml, "onset") || tag(xml, "sent"), hasta: tag(xml, "expires"), emitido: tag(xml, "sent"),
     descripcion: decode(tag(xml, "description")), instrucciones: decode(tag(xml, "instruction")), alcance: local ? "LOCAL" : "REGIONAL", distancia_km: Math.round(distance),
     poligonos: polygons.map(thin), url,
@@ -94,7 +113,7 @@ export function computeAlerts(hours) {
   const west = (deg) => deg >= 225 && deg <= 350;
   for (const run of runs(hours, (h) => (h.gust ?? 0) >= 40 && west(h.dir ?? -1) && (h.rh ?? 100) <= 25 && west(h.dir700 ?? -1) && (h.wind700 ?? 0) >= 50)) {
     const top = peak(run, "gust");
-    add("zonda", "Condiciones de viento Zonda", top >= 70 ? "naranja" : "amarillo", run, `Ráfagas del oeste de hasta ${Math.round(top)} km/h con humedad de ${Math.round(low(run, "rh"))} %`);
+    add("zonda", "Condiciones de viento Zonda", top >= 100 ? "rojo" : top >= 80 ? "naranja" : "amarillo", run, `Ráfagas del oeste de hasta ${Math.round(top)} km/h con humedad de ${Math.round(low(run, "rh"))} %`);
   }
   for (const run of runs(hours, (h) => [95, 96, 99].includes(h.code) || ((h.cape ?? 0) >= 800 && (h.prob ?? 0) >= 40))) {
     const top = peak(run, "cape");
@@ -106,13 +125,21 @@ export function computeAlerts(hours) {
   // Lluvia: acumulado móvil de 3 horas (anegamientos, aluviones) y de 24 horas.
   const sum = (index, span) => hours.slice(Math.max(0, index - span + 1), index + 1).reduce((total, hour) => total + (hour.rain ?? 0), 0);
   hours.forEach((hour, index) => { hour.rain3 = sum(index, 3); hour.rain24 = sum(index, 24); });
-  for (const run of runs(hours, (h) => h.rain3 >= 20)) {
-    const top = peak(run, "rain3");
-    add("lluvia", "Lluvia intensa: riesgo de anegamiento o aluvión", top >= 40 ? "naranja" : "amarillo", run, `Hasta ${Math.round(top)} mm en 3 horas`);
+  // En zona árida y con pendiente, lo que hace daño es la intensidad: 20 mm en una hora ya anega calles y baja agua por
+  // los cauces secos. Por eso cuenta también la hora más intensa, no sólo el acumulado.
+  for (const run of runs(hours, (h) => h.rain3 >= 20 || (h.rain ?? 0) >= 15)) {
+    const top = peak(run, "rain3"), hour = peak(run, "rain");
+    const nivel = top >= 60 || hour >= 40 ? "rojo" : top >= 40 || hour >= 20 ? "naranja" : "amarillo";
+    add("lluvia", "Lluvia intensa: riesgo de anegamiento o aluvión", nivel, run, `Hasta ${Math.round(top)} mm en 3 horas, ${Math.round(hour)} mm en la hora más intensa`);
   }
-  for (const run of runs(hours, (h) => h.rain24 >= 50 && h.rain3 < 20)) {
+  for (const run of runs(hours, (h) => h.rain24 >= 30 && h.rain3 < 20 && (h.rain ?? 0) < 15)) {
     const top = peak(run, "rain24");
-    add("lluvia", "Lluvia persistente: riesgo de inundación", top >= 80 ? "naranja" : "amarillo", run, `Hasta ${Math.round(top)} mm en 24 horas`);
+    add("lluvia", "Lluvia persistente: riesgo de inundación", top >= 80 ? "rojo" : top >= 50 ? "naranja" : "amarillo", run, `Hasta ${Math.round(top)} mm en 24 horas`);
+  }
+  // Nevada en la ciudad: poco frecuente, pero corta accesos y complica traslados.
+  for (const run of runs(hours, (h) => [71, 73, 75, 77, 85, 86].includes(h.code))) {
+    const heavy = hours.slice(run.from, run.to + 1).some((h) => [75, 86].includes(h.code));
+    add("nieve", "Nevada en la ciudad", heavy ? "naranja" : "amarillo", run, heavy ? "Nevada fuerte prevista" : "Nevada prevista");
   }
   for (const run of runs(hours, (h) => (h.temp ?? 0) >= 38)) add("calor", "Calor extremo", peak(run, "temp") >= 41 ? "naranja" : "amarillo", run, `Máxima de ${Math.round(peak(run, "temp"))} °C`);
   for (const run of runs(hours, (h) => (h.temp ?? 99) <= -3)) add("frio", "Helada fuerte", "amarillo", run, `Mínima de ${Math.round(low(run, "temp"))} °C`);
@@ -121,7 +148,7 @@ export function computeAlerts(hours) {
 
 export function parseForecast(data) {
   const h = data?.hourly ?? {};
-  const hours = (h.time ?? []).map((t, i) => ({ t, temp: h.temperature_2m?.[i], rh: h.relative_humidity_2m?.[i], rain: h.precipitation?.[i], prob: h.precipitation_probability?.[i], gust: h.wind_gusts_10m?.[i], dir: h.wind_direction_10m?.[i], cape: h.cape?.[i], li: h.lifted_index?.[i], frz: h.freezing_level_height?.[i], code: h.weather_code?.[i], wind700: h.wind_speed_700hPa?.[i], dir700: h.wind_direction_700hPa?.[i] }));
+  const hours = (h.time ?? []).map((t, i) => ({ t, temp: h.temperature_2m?.[i], rh: h.relative_humidity_2m?.[i], rain: h.precipitation?.[i], prob: h.precipitation_probability?.[i], gust: h.wind_gusts_10m?.[i], dir: h.wind_direction_10m?.[i], cape: h.cape?.[i], li: h.lifted_index?.[i], frz: h.freezing_level_height?.[i], code: h.weather_code?.[i], wind700: h.wind_speed_700hPa?.[i], dir700: h.wind_direction_700hPa?.[i], wind500: h.wind_speed_500hPa?.[i], dir500: h.wind_direction_500hPa?.[i] }));
   const c = data?.current ?? {};
   return { actual: { t: c.time ?? null, temp: c.temperature_2m ?? null, rh: c.relative_humidity_2m ?? null, viento: c.wind_speed_10m ?? null, rafaga: c.wind_gusts_10m ?? null, dir: c.wind_direction_10m ?? null, lluvia: c.precipitation ?? null, code: c.weather_code ?? null }, horas: hours };
 }
@@ -139,17 +166,27 @@ export function parseInpres(xml, point = HOSPITAL) {
   return out.sort((a, b) => b.en.localeCompare(a.en));
 }
 
-/** Un sismo fuerte y cercano en las últimas 6 horas pide revisar el hospital, aunque el clima esté en calma. */
+/**
+ * Intensidad estimada en la ciudad (escala Mercalli, aproximación de primer orden sin calibrar): crece con la magnitud
+ * y cae con la distancia al foco, contando la profundidad. Reemplaza la tabla fija de magnitud y distancia, que no
+ * veía un terremoto muy grande lejano (Chile) y daba rojo por sismos que acá casi no se sienten.
+ */
+export function quakeIntensity(quake) {
+  const focus = Math.max(10, Math.hypot(quake.km, quake.prof ?? 30));
+  return Math.round((1.5 * Math.min(quake.mg, 7.5) - 3.5 * Math.log10(focus) + 3) * 10) / 10;
+}
+/** Sismos recientes que piden revisar el hospital. Los fuertes (grado 5 o más) siguen visibles 24 horas; los leves, 6. */
 export function quakeAlerts(quakes, nowMs) {
   const alerts = [];
   for (const quake of quakes) {
-    if (nowMs - Date.parse(quake.en) > 6 * 3_600_000) continue;
-    const nivel = quake.mg >= 6 && quake.km <= 300 ? "rojo" : quake.mg >= 5 && quake.km <= 200 ? "naranja" : quake.mg >= 4 && quake.km <= 100 ? "amarillo" : null;
-    // Sentido sin daños esperables = 3; daños posibles = 5; daños probables = 7; fuerte y muy cerca = 9.
-    const grado = quake.mg >= 6.5 && quake.km <= 100 ? 9 : nivel === "rojo" ? 7 : nivel === "naranja" ? 5 : 3;
-    if (nivel) alerts.push({ tipo: "sismo", grado, nivel: colorOf(grado), titulo: `Sismo de magnitud ${quake.mg.toFixed(1)} a ${quake.km} km`, detalle: `${quake.prov}, profundidad ${quake.prof ?? "?"} km`, desde: quake.en, hasta: quake.en });
+    const hours = (nowMs - Date.parse(quake.en)) / 3_600_000;
+    const mmi = quakeIntensity(quake);
+    const grado = mmi >= 7.5 ? 9 : mmi >= 6.5 ? 8 : mmi >= 5.5 ? 7 : mmi >= 4.5 ? 5 : mmi >= 3.5 ? 3 : 0;
+    if (!grado || hours < -1 || hours > (grado >= 5 ? 24 : 6)) continue;
+    const feel = mmi >= 6.5 ? "daños probables" : mmi >= 5.5 ? "daños posibles" : mmi >= 4.5 ? "sacudida fuerte, revisar instalaciones" : "sentido, sin daños esperables";
+    alerts.push({ tipo: "sismo", grado, nivel: colorOf(grado), titulo: `Sismo de magnitud ${quake.mg.toFixed(1)} a ${quake.km} km: ${feel}`, detalle: `${quake.prov}, profundidad ${quake.prof ?? "?"} km. Intensidad estimada en la ciudad: ${mmi} (cálculo aproximado)${hours > 6 ? `. Ocurrió hace ${Math.round(hours)} horas` : ""}`, desde: quake.en, hasta: quake.en });
   }
-  return alerts.sort((a, b) => ORDER[b.nivel] - ORDER[a.nivel]);
+  return alerts.sort((a, b) => b.grado - a.grado);
 }
 
 const MODELS = [["ecmwf_ifs025", "ECMWF"], ["gfs_seamless", "GFS"], ["icon_seamless", "ICON"]];
@@ -189,55 +226,147 @@ export function parseEnso(oniText, weeklyText) {
  */
 export function alertLevel(state, nowMs = Date.now()) {
   const motivos = [];
-  const radarAlerts = state.radar?.datos?.alertas ?? [];
-  const overCity = radarAlerts.some((alert) => alert.grado >= 5 && / sobre San Rafael/.test(alert.titulo));
+  const push = (grado, origen, texto) => motivos.push({ grado, origen, texto });
   const hoursTo = (iso) => { const at = Date.parse(/[zZ]|[+-]\d\d:\d\d$/.test(String(iso)) ? iso : `${iso}:00-03:00`); return Number.isFinite(at) ? (at - nowMs) / 3_600_000 : 0; };
-  for (const alert of state.oficial?.datos?.alertas ?? []) {
-    if (alert.alcance !== "LOCAL") continue;
-    const gravedad = { amarillo: 2, naranja: 3, rojo: 4 }[alert.nivel] ?? 2;
-    const inForce = hoursTo(alert.desde) <= 0 && hoursTo(alert.hasta) >= 0;
-    const certeza = alert.certeza === "Observed" || (inForce && overCity) ? 3 : alert.certeza === "Possible" || hoursTo(alert.desde) > 24 ? 1 : 2;
-    alert.grado = gradeOf(gravedad, certeza);
-    motivos.push({ grado: alert.grado, origen: "SMN", texto: `${alert.evento}${certeza === 3 ? " (confirmado por el radar)" : ""}` });
-  }
-  // El radar solo no alcanza para alertar por granizo (decisión de Sebastián, 7/10/2026): un eco intenso tiene que
-  // estar acompañado por otro dato de alarma para San Rafael. Sin eso, una celda lejana queda como "atención" (grado 2,
-  // sin alerta) y una tormenta extensa sobre la ciudad no pasa de vigilancia (grado 3).
   const near = (alert) => { const start = hoursTo(alert.desde), end = hoursTo(alert.hasta ?? alert.desde); return start <= 6 && end >= -1; };
+  const official = state.oficial?.datos?.alertas ?? [];
+  const smnDown = !state.oficial?.ok, modelDown = !state.pronostico?.ok;
+  const radar = state.radar?.datos;
+  const radarAlerts = radar?.alertas ?? [];
+  // Grado que da el radar por sí mismo, antes de cruzarlo con lo demás.
+  const cityEcho = Math.max(0, ...radarAlerts.filter((alert) => / sobre San Rafael/.test(alert.titulo)).map((alert) => alert.grado ?? 3));
+  const strongEcho = radarAlerts.some((alert) => (alert.grado ?? 0) >= 4); // 54 dBZ o más, sobre la ciudad o en una celda a 60 km o menos
+  // Para llegar a rojo (7 o más) por tormenta, granizo o lluvia hace falta ver el núcleo: 60 dBZ repetido en dos
+  // barridos y con parte a 8 km o menos del hospital. Sin eso, ningún camino pasa de 6.
+  const coreNear = cityEcho >= 7;
+  const convective = (text) => /torment|graniz|lluvi|aluvi/i.test(String(text));
+  const radarLive = Boolean(state.radar?.ok && radar?.vigente);
+
+  // --- SMN ---
+  // Alcance de un aviso oficial: "cubre" la ciudad, o es un aviso a corto plazo (tormenta ya observada por el SMN)
+  // cuyo borde está a 25 km o menos: eso es "alrededores". Lo demás es regional.
+  const reach = (alert) => (alert.alcance === "LOCAL" ? "cubre" : alert.corto_plazo && alert.distancia_km <= 25 ? "cerca" : null);
+  const live = (alert) => !alert.hasta || hoursTo(alert.hasta) >= 0;
+  for (const alert of official) {
+    const where = reach(alert);
+    if (!where) {
+      // Regional naranja o roja: no es alerta para el hospital, pero puede traer derivaciones. Queda como "atención".
+      if (live(alert) && near(alert) && ["naranja", "rojo"].includes(alert.nivel) && alert.distancia_km <= 150) push(2, "SMN", `${alert.evento} a ${alert.distancia_km} km (regional)`);
+      continue;
+    }
+    const gravedad = { amarillo: 2, naranja: 3, rojo: 4 }[alert.nivel] ?? 2;
+    if (!live(alert)) {
+      // Una alerta de zona vencida con el SMN sin responder: no se la da por terminada (suelen renovarse). Queda
+      // seis horas como "sin confirmar", un grado menos y nunca por debajo de vigilancia.
+      if (smnDown && !alert.corto_plazo && hoursTo(alert.hasta) >= -6) { alert.grado = Math.max(3, gradeOf(gravedad, 2) - 1); push(alert.grado, "SMN", `${alert.evento} (venció y el SMN no responde: sin confirmar)`); }
+      continue;
+    }
+    const inForce = hoursTo(alert.desde) <= 0;
+    // "Observado": el radar muestra tormenta fuerte de verdad sobre la ciudad. Una alerta de zona necesita núcleo de
+    // 60 dBZ persistente; un aviso a corto plazo (ya es una tormenta vista por el SMN), 54 dBZ.
+    const observed = inForce && (alert.corto_plazo ? cityEcho >= 5 : cityEcho >= 6);
+    const certeza = where === "cerca" ? 1 : observed ? 3 : alert.certeza === "Possible" || hoursTo(alert.desde) > 24 ? 1 : 2;
+    alert.grado = gradeOf(gravedad, certeza);
+    if (convective(alert.evento) && !coreNear) alert.grado = Math.min(alert.grado, 6);
+    // Aviso a corto plazo que cubre la ciudad pero con el radar al día y sin ningún eco: un escalón menos.
+    if (alert.corto_plazo && where === "cubre" && radarLive && !radarAlerts.length) alert.grado = Math.min(alert.grado, 5);
+    push(alert.grado, "SMN", `${alert.evento}${where === "cerca" ? ` (a ${alert.distancia_km} km de la ciudad)` : observed ? " (confirmado por el radar)" : ""}`);
+  }
+  const officialSupport = official.some((alert) => reach(alert) && live(alert) && near(alert));
+
+  // --- Radar ---
+  // El radar solo no alcanza para alertar por granizo (decisión de Sebastián, 7/10/2026): tiene que acompañarlo otro
+  // dato para San Rafael. El ambiente que describe el modelo alcanza con poco (basta que haya inestabilidad).
   const apoyo = [];
-  if ((state.oficial?.datos?.alertas ?? []).some((alert) => alert.alcance === "LOCAL" && near(alert))) apoyo.push("alerta del SMN para la zona");
-  if ((state.pronostico?.datos?.alertas ?? []).some((alert) => ["tormenta", "granizo", "lluvia"].includes(alert.tipo) && near(alert))) apoyo.push("pronóstico de tormenta");
+  if (officialSupport) apoyo.push("alerta del SMN para la zona");
+  const firmForecast = (state.pronostico?.datos?.alertas ?? []).some((alert) => ["tormenta", "granizo", "lluvia"].includes(alert.tipo) && near(alert));
+  const unstable = (state.pronostico?.datos?.horas ?? []).some((hour) => { const h = hoursTo(hour.t); return h >= -6 && h <= 6 && (((hour.cape ?? 0) >= 500 && (hour.prob ?? 0) >= 20) || (hour.li ?? 9) <= -2); });
+  if (firmForecast) apoyo.push("pronóstico de tormenta"); else if (unstable) apoyo.push("algo de inestabilidad en el pronóstico");
   if ((state.hidro?.datos?.lluvia ?? []).some((item) => item.lectura && item.km <= 45 && item.lectura.hace_h <= 6 && item.lectura.mm_3h >= 10)) apoyo.push("lluvia fuerte medida cerca");
-  if (state.radar?.datos) {
+  // Una fuente que no respondió no es una fuente que dijo "no pasa nada": si falta el SMN o el modelo, no se le baja el grado al radar.
+  const blind = smnDown || modelDown;
+  if (radar) {
     for (const alert of radarAlerts) {
       const city = / sobre San Rafael/.test(alert.titulo);
-      if (apoyo.length) alert.detalle = `${alert.detalle}. Coincide con: ${apoyo.join(", ")}`;
-      else { alert.grado = city ? Math.min(alert.grado ?? 3, 3) : 2; alert.detalle = `${alert.detalle}. Sólo lo marca el radar: ni el SMN, ni el pronóstico, ni los pluviómetros lo acompañan`; if (city && /ranizo/.test(alert.titulo)) alert.titulo = "Eco muy intenso sobre San Rafael, sin otra señal que lo confirme"; }
+      if (alert.sostenida) {
+        // Celda quieta aguas arriba: con alerta oficial de lluvia o tormenta vigente es "preparación"; sola, atención.
+        alert.grado = official.some((item) => reach(item) && live(item) && near(item) && convective(item.evento)) ? 5 : apoyo.length || blind ? 3 : 2;
+      } else if (apoyo.length) {
+        alert.detalle = `${alert.detalle}. Coincide con: ${apoyo.join(", ")}`;
+        // Si lo único que acompaña es una señal débil del modelo, no alcanza para rojo.
+        if (apoyo.length === 1 && apoyo[0].startsWith("algo de inestabilidad")) alert.grado = Math.min(alert.grado, 6);
+      }
+      else if (blind) alert.detalle = `${alert.detalle}. No se pudo cruzar con el SMN o el pronóstico: no respondieron`;
+      else {
+        // Única excepción: un núcleo extenso y persistente sobre la ciudad no es un eco falso. Sube hasta "preparación".
+        const before = alert.grado ?? 3;
+        alert.grado = city ? (before >= 7 ? 5 : Math.min(before, 3)) : 2;
+        alert.detalle = `${alert.detalle}. Sólo lo marca el radar: ni el SMN, ni el pronóstico, ni los pluviómetros lo acompañan`;
+        if (city && before >= 5) alert.titulo = alert.grado >= 5 ? "Eco muy intenso y persistente sobre San Rafael, sin otra señal que lo confirme" : "Eco muy intenso sobre San Rafael, sin otra señal que lo confirme";
+      }
       alert.nivel = colorOf(alert.grado);
-      motivos.push({ grado: alert.grado, origen: "Radar", texto: alert.titulo });
+      push(alert.grado, "Radar", `${alert.titulo}${radar.atrasado_min ? ` (última imagen de hace ${radar.atrasado_min} min)` : ""}`);
     }
-    state.radar.datos.menores = radarAlerts.filter((alert) => alert.grado <= 2);
-    state.radar.datos.alertas = radarAlerts.filter((alert) => alert.grado > 2);
-    state.radar.datos.apoyo = apoyo;
+    radar.menores = radarAlerts.filter((alert) => alert.grado <= 2);
+    radar.alertas = radarAlerts.filter((alert) => alert.grado > 2);
+    radar.apoyo = apoyo;
   }
-  for (const alert of state.sismos?.datos?.alertas ?? []) motivos.push({ grado: alert.grado ?? 3, origen: "Sismo", texto: alert.titulo });
-  for (const alert of state.hidro?.datos?.alertas ?? []) motivos.push({ grado: alert.grado, origen: "Medición INA", texto: alert.titulo });
+
+  // --- Sismos ---
+  for (const alert of state.sismos?.datos?.alertas ?? []) push(alert.grado ?? 3, "Sismo", alert.titulo);
+
+  // --- Mediciones (INA) ---
+  for (const alert of state.hidro?.datos?.alertas ?? []) {
+    // Un pluviómetro solo, sin eco de radar ni alerta, puede ser un instrumento fallando: queda en preaviso y a verificar.
+    if (alert.tipo === "lluvia_medida" && alert.grado > 4 && !officialSupport && !radarAlerts.length) { alert.grado = 4; alert.nivel = colorOf(4); alert.detalle = `${alert.detalle}. Sin eco de radar ni alerta que lo acompañe: verificar`; }
+    push(alert.grado, "Medición INA", alert.titulo);
+  }
+
+  // --- Pronóstico del modelo ---
   const forecast = state.pronostico?.datos;
   if (forecast?.alertas) {
+    forecast.alertas = forecast.alertas.filter((alert) => hoursTo(alert.hasta ?? alert.desde) >= -1); // lo que ya pasó no alerta
     for (const alert of forecast.alertas) {
       // Señal débil de tormenta o una helada: fenómeno menor. Lo demás, según el umbral que superó.
       const gravedad = (alert.tipo === "tormenta" && alert.nivel === "amarillo") || alert.tipo === "frio" ? 1 : { amarillo: 2, naranja: 3, rojo: 4 }[alert.nivel] ?? 2;
-      alert.grado = gradeOf(gravedad, hoursTo(alert.desde) <= 6 ? 2 : 1); // un modelo solo nunca es "observado"
-      motivos.push({ grado: alert.grado, origen: "Pronóstico", texto: alert.titulo });
+      const soon = hoursTo(alert.desde) <= 6;
+      alert.grado = gradeOf(gravedad, soon ? 2 : 1); // un modelo solo nunca es "observado"
+      // Un modelo describe el ambiente, no una tormenta que exista. Solo, no pasa de "preparación" (5); y para tormenta
+      // o granizo, de vigilancia (3) o preaviso (4 si es en las próximas 6 horas), salvo que haya alerta oficial o un
+      // eco fuerte en el radar a 60 km o menos.
+      if (!officialSupport) alert.grado = Math.min(alert.grado, ["tormenta", "granizo"].includes(alert.tipo) && !strongEcho ? (soon ? 4 : 3) : 5);
+      if (["tormenta", "granizo", "lluvia"].includes(alert.tipo) && !coreNear) alert.grado = Math.min(alert.grado, 6);
     }
+    // De cada fenómeno queda el aviso más grave (lluvia intensa y lluvia persistente son la misma lluvia).
+    const worst = new Map();
+    for (const alert of forecast.alertas) if (!worst.has(alert.tipo) || alert.grado > worst.get(alert.tipo).grado) worst.set(alert.tipo, alert);
+    for (const alert of worst.values()) push(alert.grado, "Pronóstico", alert.titulo);
     forecast.menores = forecast.alertas.filter((alert) => alert.grado <= 2);
     forecast.alertas = forecast.alertas.filter((alert) => alert.grado > 2).map((alert) => ({ ...alert, nivel: colorOf(alert.grado) }));
   }
+
+  // Por clima el sistema llega hasta 8. El 9 (catástrofe en curso) queda para un sismo de intensidad destructiva:
+  // que el daño ya ocurrió lo confirma una persona, no un radar.
+  for (const item of motivos) if (item.origen !== "Sismo" && item.grado > 8) item.grado = 8;
   motivos.sort((a, b) => b.grado - a.grado);
-  const incompleto = [state.oficial, state.pronostico, state.radar].some((source) => !source?.ok) || state.radar?.datos?.vigente === false;
+  const old = (source, minutes) => !source?.en || nowMs - Date.parse(source.en) > minutes * 60_000;
+  const faltan = [];
+  if (smnDown || old(state.oficial, 45)) faltan.push("SMN");
+  if (modelDown || old(state.pronostico, 180)) faltan.push("pronóstico");
+  if (!state.radar?.ok || radar?.vigente === false) faltan.push("radar");
+  if (state.sismos && !state.sismos.ok) faltan.push("sismos");
   const grado = motivos[0]?.grado ?? 1;
   const step = GRADOS[grado - 1];
-  return { grado, color: colorOf(grado), nombre: step.nombre, accion: step.accion, motivos: motivos.slice(0, 6).map((item) => ({ ...item, nivel: colorOf(item.grado) })), incompleto, escala: GRADOS };
+  return { grado, color: colorOf(grado), nombre: step.nombre, accion: step.accion, motivos: motivos.slice(0, 6).map((item) => ({ ...item, nivel: colorOf(item.grado) })), incompleto: faltan.length > 0, faltan, escala: GRADOS };
+}
+
+/** Viento que arrastra las tormentas: promedio vectorial de 700 y 500 hPa (si falta 500, sólo 700). */
+export function steeringWind(hour) {
+  if (!hour || !Number.isFinite(hour.dir700) || !Number.isFinite(hour.wind700)) return null;
+  const levels = [[hour.dir700, hour.wind700], ...(Number.isFinite(hour.dir500) && Number.isFinite(hour.wind500) ? [[hour.dir500, hour.wind500]] : [])];
+  const u = levels.reduce((sum, [dir, speed]) => sum + speed * Math.sin((dir * Math.PI) / 180), 0) / levels.length;
+  const v = levels.reduce((sum, [dir, speed]) => sum + speed * Math.cos((dir * Math.PI) / 180), 0) / levels.length;
+  return { dir: Math.round(((Math.atan2(u, v) * 180) / Math.PI + 360) % 360), kmh: Math.round(Math.hypot(u, v) * 10) / 10 };
 }
 
 /**
@@ -271,7 +400,7 @@ export function riverReading(rows, nowMs) {
   const cambio_6h = back(6), cambio_24h = back(24);
   const week = obs.filter((row) => row.at >= last.at - 7 * 86_400_000).map((row) => row.v);
   return { t: new Date(last.at).toISOString(), m: last.v, hace_h: Math.round((nowMs - last.at) / 3_600_000), cambio_6h, cambio_24h, min7: Math.min(...week), max7: Math.max(...week),
-    tendencia: (cambio_24h ?? 0) >= 0.05 ? "sube" : (cambio_24h ?? 0) <= -0.05 ? "baja" : "estable", rapido: (cambio_6h ?? 0) >= 0.25 || (cambio_24h ?? 0) >= 0.5 };
+    tendencia: (cambio_24h ?? 0) >= 0.05 ? "sube" : (cambio_24h ?? 0) <= -0.05 ? "baja" : "estable", rapido: ((cambio_6h ?? 0) >= 0.25 && (cambio_24h ?? 0) >= 0.3) || (cambio_24h ?? 0) >= 0.5 }; // contra el día anterior, para no confundir con el ciclo diario de deshielo
 }
 
 export function rainReading(rows, nowMs) {
@@ -290,7 +419,7 @@ export function hydroAlerts(datos) {
   for (const item of datos?.lluvia ?? []) {
     if (!item.lectura || item.km > 45 || item.lectura.hace_h > 6 || item.lectura.mm_3h < 20) continue;
     const grado = item.lectura.mm_3h >= 40 ? 6 : 4;
-    alerts.push({ tipo: "lluvia_medida", grado, nivel: colorOf(grado), titulo: `Lluvia intensa medida en ${item.nombre}, a ${item.km} km`, detalle: `${item.lectura.mm_3h} mm en 3 horas (medición de hace ${item.lectura.hace_h} h)`, desde: item.lectura.t, hasta: item.lectura.t });
+    alerts.push({ tipo: "lluvia_medida", fuerte: grado === 6, grado, nivel: colorOf(grado), titulo: `Lluvia intensa medida en ${item.nombre}, a ${item.km} km`, detalle: `${item.lectura.mm_3h} mm en 3 horas (medición de hace ${item.lectura.hace_h} h)`, desde: item.lectura.t, hasta: item.lectura.t });
   }
   for (const item of datos?.rios ?? []) {
     if (!item.lectura?.rapido || !item.arriba || item.lectura.hace_h > 8) continue;
@@ -335,7 +464,7 @@ export function createWeatherWatch({ dataDir, fetchImpl = fetch, env = process.e
   }
 
   async function forecast() {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${HOSPITAL.lat}&longitude=${HOSPITAL.lon}&timezone=America%2FArgentina%2FMendoza&forecast_days=3&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation,weather_code&hourly=temperature_2m,relative_humidity_2m,precipitation,precipitation_probability,wind_gusts_10m,wind_direction_10m,cape,lifted_index,freezing_level_height,weather_code,wind_speed_700hPa,wind_direction_700hPa`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${HOSPITAL.lat}&longitude=${HOSPITAL.lon}&timezone=America%2FArgentina%2FMendoza&forecast_days=3&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation,weather_code&hourly=temperature_2m,relative_humidity_2m,precipitation,precipitation_probability,wind_gusts_10m,wind_direction_10m,cape,lifted_index,freezing_level_height,weather_code,wind_speed_700hPa,wind_direction_700hPa,wind_speed_500hPa,wind_direction_500hPa`;
     const parsed = parseForecast(JSON.parse(await getText(fetchImpl, url)));
     if (!parsed.horas.length) throw new Error("sin_horas");
     const stamp = new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Argentina/Mendoza", dateStyle: "short", timeStyle: "short" }).format(now()).replace(" ", "T");
@@ -350,7 +479,7 @@ export function createWeatherWatch({ dataDir, fetchImpl = fetch, env = process.e
       ]);
       extendido = parseExtended(JSON.parse(daily), JSON.parse(hourly));
     } catch { extendido = state?.pronostico?.datos?.extendido ?? null; }
-    return { actual: parsed.actual, horas: next.map(({ t, temp, rh, rain, prob, gust, cape, frz, dir700, wind700 }) => ({ t, temp, rh, rain, prob, gust, cape, frz, dir700, wind700 })), alertas: computeAlerts(next), extendido };
+    return { actual: parsed.actual, horas: next.map(({ t, temp, rh, rain, prob, gust, cape, li, frz, dir700, wind700, dir500, wind500 }) => ({ t, temp, rh, rain, prob, gust, cape, li, frz, dir700, wind700, dir500, wind500 })), alertas: computeAlerts(next), extendido };
   }
 
   /** Radar de la DACC (compuesto Sur): se baja la imagen y se mide el eco cerca de la ciudad. */
@@ -438,16 +567,32 @@ export function createWeatherWatch({ dataDir, fetchImpl = fetch, env = process.e
     // El radar se evalúa con el viento a 3.000 m de esta hora: una celda lejana sólo cuenta si viene hacia la ciudad.
     if (radarState.datos?.lectura && radarState.datos.vigente) {
       const hour = (pronostico.datos?.horas ?? []).find((item) => Date.parse(`${item.t}:00-03:00`) + 3_600_000 > now().getTime());
-      radarState.datos.viento_altura = hour && Number.isFinite(hour.dir700) ? { dir: hour.dir700, kmh: hour.wind700 } : null;
-      // La DACC publica barridos distintos cada pocos minutos y alguno sale casi vacío (visto el 7/10/2026: 06:24 con
-      // 9 celdas, 06:26 con ninguna). Para que la alerta no parpadee, vale la lectura más grave de los últimos 12 minutos.
+      radarState.datos.viento_altura = steeringWind(hour);
+      // Lecturas de los últimos barridos (25 minutos): los grados altos piden que el núcleo se repita en 2 de 3.
       const data = radarState.datos;
-      const earlier = (state?.radar?.datos?.recientes ?? []).filter((item) => item.imagen !== data.imagen && now().getTime() - Date.parse(item.imagen) < 12 * 60_000);
+      const earlier = (state?.radar?.datos?.recientes ?? []).filter((item) => item.imagen !== data.imagen && now().getTime() - Date.parse(item.imagen) < 25 * 60_000);
       data.recientes = [{ imagen: data.imagen, lectura: data.lectura }, ...earlier].slice(0, 4);
+      const readings = data.recientes.map((item) => item.lectura);
+      // La DACC alterna barridos y alguno sale casi vacío: para lo que no pide persistencia vale el más grave de los
+      // dos últimos (así la alerta no parpadea); la persistencia se mide sobre los tres últimos.
       const top = (alerts) => Math.max(0, ...alerts.map((alert) => alert.grado));
-      data.alertas = data.recientes.map((item) => radarAlerts(item.lectura, item.imagen, data.viento_altura)).sort((a, b) => top(b) - top(a))[0];
+      data.alertas = [radarAlerts(readings[0], data.imagen, data.viento_altura, readings), ...(readings[1] ? [radarAlerts(readings[1], data.imagen, data.viento_altura, readings)] : [])].sort((a, b) => top(b) - top(a))[0];
+    } else if (radarState.datos && state?.radar?.datos?.alertas?.length) {
+      // El radar dejó de actualizarse (suele pasar justo con tormenta): lo último que mostró vale 45 minutos más,
+      // avisando que es viejo. No se baja el grado por quedarse sin imagen.
+      const lastGood = Date.parse(state.radar.datos.imagen_alerta ?? state.radar.datos.imagen ?? "");
+      const age = Math.round((now().getTime() - lastGood) / 60_000);
+      if (Number.isFinite(age) && age <= 45) { radarState.datos.alertas = state.radar.datos.alertas.map((alert) => ({ ...alert })); radarState.datos.atrasado_min = age; radarState.datos.imagen_alerta = state.radar.datos.imagen_alerta ?? state.radar.datos.imagen; }
     }
     next.nivel = alertLevel(next, now().getTime());
+    // Bajada escalonada: un grado de 5 o más no se desploma de golpe. Baja como mucho un escalón cada 30 minutos.
+    const prior = state?.nivel;
+    if (prior?.grado >= 5 && next.nivel.grado < prior.grado - 1) {
+      const waited = now().getTime() - Date.parse(prior.desde ?? state.en) >= 30 * 60_000;
+      const held = prior.bajando && !waited ? prior.grado : prior.grado - 1, step = GRADOS[held - 1];
+      next.nivel = { ...next.nivel, grado: held, color: colorOf(held), nombre: step.nombre, accion: step.accion, bajando: true, desde: held === prior.grado ? prior.desde ?? at : at,
+        motivos: [{ grado: held, nivel: colorOf(held), origen: "Sistema", texto: "Ya no se ve el motivo de la alerta: el grado baja de a un escalón cada 30 minutos" }, ...next.nivel.motivos].slice(0, 6) };
+    } else next.nivel.desde = prior && prior.grado === next.nivel.grado ? prior.desde ?? at : at;
     // Cambio de nivel: queda en el historial y se avisa. El primer cálculo no cuenta como cambio.
     const before = state?.nivel?.color ?? null;
     if (before && before !== next.nivel.color) {

@@ -79,20 +79,20 @@ export function analyzeRadar(bytes) {
   const inMap = (x, y) => x >= MAP.left && x < MAP.right && y >= MAP.top && y < MAP.bottom;
   const value = (x, y) => (inMap(x, y) ? dbzOf[pixels[y * width + x]] : 0);
   const seen = new Uint8Array(width * height);
-  const reading = { ciudad_dbz: 0, cerca_dbz: 0, region_dbz: 0, celda: null, celdas: 0, ciudad: { km2_45: 0, km2_54: 0, km2_60: 0 } };
+  const reading = { ciudad_dbz: 0, cerca_dbz: 0, region_dbz: 0, celda: null, celdas: 0, ciudad: { km2_45: 0, km2_54: 0, km2_60: 0, km2_60_8km: 0 } };
   const stack = [];
   for (let y0 = MAP.top; y0 < MAP.bottom; y0++) {
     for (let x0 = MAP.left; x0 < MAP.right; x0++) {
       if (seen[y0 * width + x0] || !value(x0, y0)) continue;
       // mancha conectada de eco de 39 dBZ o más
-      let area = 0, strong = 0, max = 0, near = Infinity, nearStrong = null, cityMax = 0, closeMax = 0, c45 = 0, c54 = 0, c60 = 0;
+      let area = 0, strong = 0, max = 0, near = Infinity, nearStrong = null, cityMax = 0, closeMax = 0, c45 = 0, c54 = 0, c60 = 0, c60near = 0;
       stack.push(x0, y0); seen[y0 * width + x0] = 1;
       while (stack.length) {
         const y = stack.pop(), x = stack.pop(), dbz = value(x, y);
         area++; if (dbz > max) max = dbz;
         const dx = (x - CITY.x) / PX_PER_KM, dy = (y - CITY.y) / PX_PER_KM, distance = Math.hypot(dx, dy);
         if (distance < near) near = distance;
-        if (distance <= 15) { if (dbz > cityMax) cityMax = dbz; if (dbz >= 45) c45++; if (dbz >= 54) c54++; if (dbz >= 60) c60++; }
+        if (distance <= 15) { if (dbz > cityMax) cityMax = dbz; if (dbz >= 45) c45++; if (dbz >= 54) c54++; if (dbz >= 60) { c60++; if (distance <= 8) c60near++; } }
         if (distance <= 60 && dbz > closeMax) closeMax = dbz;
         if (dbz >= 54) { strong++; if (!nearStrong || distance < nearStrong.km) nearStrong = { km: distance, dx, dy }; }
         for (let ny = y - 1; ny <= y + 1; ny++) for (let nx = x - 1; nx <= x + 1; nx++) {
@@ -104,7 +104,7 @@ export function analyzeRadar(bytes) {
       reading.celdas++;
       // Superficie de eco fuerte sobre la ciudad (radio de 15 km), en km²: un píxel suelto no es una tormenta.
       const km2 = (px) => Math.round((px / (PX_PER_KM * PX_PER_KM)) * 10) / 10;
-      reading.ciudad.km2_45 += km2(c45); reading.ciudad.km2_54 += km2(c54); reading.ciudad.km2_60 += km2(c60);
+      reading.ciudad.km2_45 += km2(c45); reading.ciudad.km2_54 += km2(c54); reading.ciudad.km2_60 += km2(c60); reading.ciudad.km2_60_8km += km2(c60near);
       reading.ciudad_dbz = Math.max(reading.ciudad_dbz, cityMax);
       reading.cerca_dbz = Math.max(reading.cerca_dbz, closeMax);
       reading.region_dbz = Math.max(reading.region_dbz, max);
@@ -119,30 +119,44 @@ export function analyzeRadar(bytes) {
 }
 
 /**
- * Alertas que salen de la lectura del radar, cada una con su grado (1 a 9).
- * Sobre la ciudad cuenta la SUPERFICIE de eco fuerte en un radio de 15 km, no el píxel más alto:
- *   20 km² de 45 dBZ o más = tormenta (grado 3) · 4 km² de 54 o más = tormenta fuerte, granizo posible (5)
- *   2 km² de 60 o más = granizo probable (7) · 10 km² de 60 o más = núcleo de granizo extenso (8).
- * Lejos de la ciudad (15 a 60 km) sólo cuenta una celda con núcleo de 4 km² o más de 54 dBZ, y sólo si viene hacia
- * la ciudad según el viento a 3.000 m (`steer`, que es el que arrastra las tormentas). Si se aleja o pasa de costado,
- * no es alerta. Sin dato de viento, sólo se avisa de la que ya está a 30 km o menos.
+ * Alertas que salen del radar, cada una con su grado (1 a 9). Reglas revisadas con un especialista en emergencias:
+ * SOBRE LA CIUDAD cuenta la superficie de eco fuerte en un radio de 15 km, no el píxel más alto:
+ *   20 km² de 45 dBZ o más = tormenta (grado 3) · 4 km² de 54 o más = tormenta fuerte, granizo posible (5).
+ *   Los grados altos piden además PERSISTENCIA (se cumple en 2 de los últimos 3 barridos) y cercanía:
+ *   6 km² de 60 o más = granizo probable (6) · 10 km² de 60 o más con parte a 8 km o menos del hospital (7)
+ *   · 25 km² de 60 o más a 8 km o menos (8). Entre 54 y 60 dBZ hay poca diferencia real: por eso el rojo no depende
+ *   de 2 km² de un color.
+ * LEJOS DE LA CIUDAD (15 a 60 km) sólo cuenta una celda con núcleo de 4 km² o más de 54 dBZ. Si el viento en altura
+ * (`steer`, promedio de 700 y 500 hPa) la trae: hasta 30 km, grado 5 con 60 dBZ o 4 con menos; de 30 a 60 km, 4 ó 3.
+ * Con viento flojo (menos de 15 km/h) o sin dato, la celda casi no se mueve: cuenta sólo hasta 30 km (4 ó 3).
+ * `recent` son las lecturas de los últimos barridos, la actual primero.
  */
-export function radarAlerts(reading, time, steer = null) {
+export function radarAlerts(reading, time, steer = null, recent = [reading]) {
   const alerts = [];
   const add = (grado, titulo, detalle) => alerts.push({ tipo: "radar", grado, nivel: grado >= 7 ? "rojo" : grado >= 5 ? "naranja" : "amarillo", titulo, detalle, desde: time, hasta: time });
-  const city = reading.ciudad ?? { km2_45: 0, km2_54: 0, km2_60: 0 };
-  if (city.km2_60 >= 10) add(8, "Núcleo de granizo extenso sobre San Rafael", `${city.km2_60} km² con 60 dBZ o más a menos de 15 km de la ciudad`);
-  else if (city.km2_60 >= 2) add(7, "Granizo probable sobre San Rafael", `${city.km2_60} km² con 60 dBZ o más a menos de 15 km de la ciudad`);
+  const zero = { km2_45: 0, km2_54: 0, km2_60: 0, km2_60_8km: 0 };
+  const city = { ...zero, ...(reading.ciudad ?? {}) };
+  const last = recent.slice(0, 3).map((item) => ({ ...zero, ...(item?.ciudad ?? {}) }));
+  const persists = (test) => last.filter(test).length >= 2;
+  if (persists((c) => c.km2_60_8km >= 25)) add(8, "Núcleo de granizo extenso sobre San Rafael", `${city.km2_60_8km} km² con 60 dBZ o más a menos de 8 km del hospital, en dos barridos seguidos`);
+  else if (persists((c) => c.km2_60 >= 10 && c.km2_60_8km > 0)) add(7, "Granizo probable sobre San Rafael", `${city.km2_60} km² con 60 dBZ o más, parte a menos de 8 km del hospital, en dos barridos seguidos`);
+  else if (persists((c) => c.km2_60 >= 6)) add(6, "Tormenta muy fuerte con granizo probable sobre San Rafael", `${city.km2_60} km² con 60 dBZ o más a menos de 15 km, en dos barridos seguidos`);
   else if (city.km2_54 >= 4) add(5, "Tormenta fuerte con posible granizo sobre San Rafael", `${city.km2_54} km² con 54 dBZ o más a menos de 15 km de la ciudad`);
   else if (city.km2_45 >= 20) add(3, "Tormenta sobre San Rafael", `${city.km2_45} km² con 45 dBZ o más a menos de 15 km de la ciudad`);
   const cell = reading.celda;
   if (!alerts.some((alert) => alert.grado >= 5) && cell && cell.km > 15 && cell.km <= 60 && (cell.nucleo_km2 ?? 0) >= 4) {
-    const known = steer && Number.isFinite(steer.dir) && Number.isFinite(steer.kmh) && Number.isFinite(cell.grados);
-    const off = known ? Math.abs(((steer.dir - cell.grados + 540) % 360) - 180) : null;
-    const coming = known && steer.kmh >= 15 && off <= 50;
+    const known = steer && Number.isFinite(steer.dir) && Number.isFinite(steer.kmh) && steer.kmh >= 15 && Number.isFinite(cell.grados);
+    const coming = known && Math.abs(((steer.dir - cell.grados + 540) % 360) - 180) <= 50;
     const near = cell.km <= 30, big = cell.dbz >= 60;
-    if (coming) add(near ? (big ? 6 : 4) : (big ? 4 : 3), `Celda con posible granizo a ${cell.km} km al ${cell.rumbo}, viene hacia la ciudad`, `Eco de ${cell.dbz} dBZ, núcleo de ${cell.nucleo_km2} km². El viento a 3.000 m la trae a unos ${Math.round(steer.kmh)} km/h (estimado: llegaría en ${Math.max(10, Math.round((cell.km / steer.kmh) * 6) * 10)} minutos)`);
-    else if (!known && near) add(big ? 4 : 3, `Celda con posible granizo a ${cell.km} km al ${cell.rumbo}`, `Eco de ${cell.dbz} dBZ, núcleo de ${cell.nucleo_km2} km². Sin dato de viento en altura para saber si se acerca`);
+    if (coming) add(near ? (big ? 5 : 4) : (big ? 4 : 3), `Celda con posible granizo a ${cell.km} km al ${cell.rumbo}, viene hacia la ciudad`, `Eco de ${cell.dbz} dBZ, núcleo de ${cell.nucleo_km2} km². El viento en altura la trae a unos ${Math.round(steer.kmh)} km/h (estimado: llegaría en ${Math.max(10, Math.round((cell.km / steer.kmh) * 6) * 10)} minutos)`);
+    else if (!known && near) add(big ? 4 : 3, `Celda con posible granizo a ${cell.km} km al ${cell.rumbo}, casi sin moverse`, `Eco de ${cell.dbz} dBZ, núcleo de ${cell.nucleo_km2} km². Viento en altura flojo o sin dato: puede quedarse descargando en el lugar`);
+  }
+  // Celda que no se va: núcleo fuerte a 45 km o menos presente en tres barridos seguidos sin acercarse. Es la que
+  // descarga en un mismo lugar (aluvión aguas arriba), aunque en la ciudad no llueva. Regla provisoria.
+  const cells = recent.slice(0, 3).map((item) => item?.celda).filter((item) => item && (item.nucleo_km2 ?? 0) >= 4 && item.km > 15 && item.km <= 45);
+  if (cells.length === 3 && Math.abs(cells[0].km - cells[2].km) <= 5 && !alerts.some((alert) => alert.grado >= 5)) {
+    const stuck = { tipo: "radar", sostenida: true, grado: 3, nivel: "amarillo", titulo: `Lluvia sostenida a ${cells[0].km} km al ${cells[0].rumbo}: celda fuerte que no se mueve`, detalle: `Núcleo de ${cells[0].dbz} dBZ en el mismo lugar durante tres barridos seguidos: riesgo de aluvión en esa zona`, desde: time, hasta: time };
+    return [...alerts.filter((alert) => / sobre San Rafael/.test(alert.titulo)), stuck];
   }
   return alerts;
 }

@@ -19,7 +19,7 @@ type Clima = {
   sismos?: Fuente<{ lista: { en: string; lat: number; lon: number; mg: number; prof: number | null; prov: string; sentido: boolean; km: number }[]; alertas: Calculada[] }>;
   hidro?: Fuente<{ rios: { rio: string; nombre: string; donde: string; km: number; lectura: { t: string; m: number; hace_h: number; cambio_6h: number | null; cambio_24h: number | null; min7: number; max7: number; tendencia: "sube" | "baja" | "estable"; rapido: boolean } | null }[]; lluvia: { nombre: string; km: number; lectura: { t: string; hace_h: number; mm_3h: number; mm_24h: number; descartados: number } | null }[]; alertas: Calculada[] }>;
   cambios?: { en: string; de: string; a: string; motivos: { origen: string; texto: string }[] }[];
-  nivel?: { color: Nivel | "verde"; grado?: number; nombre?: string; accion?: string; escala?: { grado: number; nombre: string; accion: string }[]; motivos: { nivel: Nivel | "verde"; grado?: number; origen: string; texto: string }[]; incompleto: boolean };
+  nivel?: { color: Nivel | "verde"; grado?: number; nombre?: string; accion?: string; escala?: { grado: number; nombre: string; accion: string }[]; motivos: { nivel: Nivel | "verde"; grado?: number; origen: string; texto: string }[]; incompleto: boolean; faltan?: string[]; bajando?: boolean };
   parte: { texto: string | null; en: string; modelo?: string } | null;
 };
 
@@ -461,22 +461,23 @@ export function ClimaPanel() {
   const maxOf = (pick: (hour: Hora) => number | null) => Math.max(0, ...hours.map((hour) => pick(hour) ?? 0));
   const rainTotal = hours.slice(0, 24).reduce((sum, hour) => sum + (hour.rain ?? 0), 0);
   const level = data.nivel ?? { color: (locales[0]?.nivel ?? calculadas[0]?.nivel ?? "verde") as Nivel | "verde", motivos: [], incompleto: !data.oficial.ok || !data.pronostico.ok };
+  const blind = Boolean(level.incompleto) && (level.grado ?? 1) <= 2; // sin SMN, radar o pronóstico no se muestra verde
   const grade = level.grado ?? ({ verde: 1, amarillo: 3, naranja: 5, rojo: 7 } as const)[level.color];
   const sources: [string, Fuente<unknown>][] = [["Alertas SMN", data.oficial], ["Radar DACC", data.radar ?? { ok: false, en: null, datos: null }], ["Ríos y lluvia INA", data.hidro ?? { ok: false, en: null, datos: null }], ["Sismos INPRES", data.sismos ?? { ok: false, en: null, datos: null }], ["Pronóstico Open-Meteo", data.pronostico], ["El Niño · NOAA", data.enso]];
 
   return (
     <div className="space-y-3">
       {/* Grado de alerta del hospital, de 1 a 9 */}
-      <section className={cn("rounded-2xl border p-4", LEVEL_STYLE[level.color].card)}>
+      <section className={cn("rounded-2xl border p-4", blind ? "border-border-strong bg-bg" : LEVEL_STYLE[level.color].card)}>
         <div className="flex flex-wrap items-start gap-x-5 gap-y-3">
           <div className="flex items-center gap-3">
-            <span className={cn("relative grid size-16 shrink-0 place-items-center rounded-2xl text-white", LEVEL_STYLE[level.color].dot)}>
+            <span className={cn("relative grid size-16 shrink-0 place-items-center rounded-2xl text-white", blind ? "bg-muted" : LEVEL_STYLE[level.color].dot)}>
               {grade >= 5 ? <span className={cn("absolute inset-0 animate-ping rounded-2xl opacity-30", LEVEL_STYLE[level.color].dot)} /> : null}
               <span className="relative text-4xl font-bold leading-none tabular-nums">{grade}</span>
             </span>
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-fg/60">Alerta · San Rafael · grado {grade} de 9</p>
-              <h1 className="text-2xl font-semibold leading-tight">{level.nombre ?? LEVEL_STYLE[level.color].label}</h1>
+              <h1 className="text-2xl font-semibold leading-tight">{blind ? "Faltan datos" : level.nombre ?? LEVEL_STYLE[level.color].label}</h1>
               <div className="mt-1.5 flex gap-0.5" role="img" aria-label={`Grado ${grade} de 9`}>
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((step) => <span key={step} className={cn("h-2.5 w-5 rounded-sm sm:w-6", LEVEL_STYLE[step >= 7 ? "rojo" : step >= 5 ? "naranja" : step >= 3 ? "amarillo" : "verde"].dot, step > grade && "opacity-20", step === grade && "ring-2 ring-fg/70 ring-offset-1")} />)}
               </div>
@@ -489,13 +490,14 @@ export function ClimaPanel() {
             ) : (
               <p className="mt-1">{data.oficial.ok ? `Ni el SMN, ni el radar, ni el pronóstico de 48 horas marcan riesgo para la ciudad.${regionales.length ? ` En la región: ${[...new Set(regionales.map((alert) => `${alert.evento.toLowerCase()} a ${alert.distancia_km} km`))].join(", ")}.` : ""}` : "Sin motivos de alerta en lo que se pudo consultar."}</p>
             )}
-            {level.incompleto ? <p className="mt-1 font-semibold text-warn">Atención: alguna fuente no respondió o está desactualizada; el grado puede ser mayor.</p> : null}
+            {level.incompleto ? <p className="mt-1 font-semibold text-warn">{blind ? `No se puede decir "sin riesgo": no hay datos de ${(level.faltan ?? []).join(", ") || "alguna fuente"}. Grado mínimo ${grade}.` : `Sin datos de ${(level.faltan ?? []).join(", ") || "alguna fuente"}: el grado puede ser mayor.`}</p> : null}
+            {grade >= 6 && level.motivos.some((reason) => (reason.grado ?? 0) >= 6) ? <p className="mt-1 text-xs text-fg/70">Grado calculado en forma automática, con umbrales todavía sin contrastar con eventos reales de San Rafael: lo confirma el jefe de guardia antes de activar el plan.</p> : null}
           </div>
         </div>
         {level.escala ? (
           <details className="mt-3 border-t border-fg/10 pt-2 text-sm">
             <summary className="cursor-pointer text-xs font-semibold text-fg/70">Cómo se calcula el grado y qué pide cada uno</summary>
-            <p className="mt-2 text-xs text-fg/70">El grado sale de dos cosas: qué tan grave es el fenómeno y qué tan seguro es que afecte a la ciudad (pronóstico lejano, alerta oficial o dentro de 6 horas, u observado en el radar sobre San Rafael). Vale el más alto entre SMN, radar, sismos y pronóstico. En el radar cuenta la superficie de eco fuerte sobre la ciudad, no un punto; una celda lejana sólo cuenta si es grande y el viento en altura la trae. El radar solo no alcanza para alertar por granizo: tiene que acompañarlo una alerta del SMN para la zona, el pronóstico de tormenta o lluvia fuerte medida cerca. Las acciones son una propuesta: las valida la Dirección.</p>
+            <p className="mt-2 text-xs text-fg/70">El grado sale de dos cosas: qué tan grave es el fenómeno y qué tan seguro es que afecte a la ciudad (pronóstico lejano, alerta oficial o dentro de 6 horas, u observado en el radar sobre San Rafael). Vale el más alto entre SMN, radar, sismos y pronóstico. En el radar cuenta la superficie de eco fuerte sobre la ciudad, no un punto; una celda lejana sólo cuenta si es grande y el viento en altura la trae. Los grados altos del radar piden que el núcleo se repita en dos barridos seguidos. El radar solo no alcanza para alertar por granizo: tiene que acompañarlo una alerta del SMN para la zona, inestabilidad en el pronóstico o lluvia fuerte medida cerca. El pronóstico solo, sin alerta del SMN, no pasa de grado 5. Por clima se llega hasta 8; el 9 queda para un sismo destructivo. Un grado de 5 o más baja de a un escalón cada 30 minutos. Para llegar a rojo por tormenta hace falta ver el núcleo de granizo a menos de 8 km del hospital en dos barridos. Todavía no cubre bien los aluviones en Valle Grande ni en el Cañón del Atuel. En los sismos, la intensidad es estimada, no medida. Las acciones son una propuesta: las valida la Dirección.</p>
             <ol className="mt-2 grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
               {level.escala.map((step) => <li key={step.grado} className={cn("flex gap-2 rounded-lg bg-surface/70 p-2 text-xs", step.grado === grade && "ring-2 ring-fg/60")}><span className={cn("grid size-6 shrink-0 place-items-center rounded-md font-bold text-white", LEVEL_STYLE[step.grado >= 7 ? "rojo" : step.grado >= 5 ? "naranja" : step.grado >= 3 ? "amarillo" : "verde"].dot)}>{step.grado}</span><span><b className="font-semibold">{step.nombre}.</b> {step.accion}</span></li>)}
             </ol>
