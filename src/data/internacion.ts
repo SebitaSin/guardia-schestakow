@@ -1,5 +1,6 @@
 import raw from "./internacion.json";
 import { applyIdentidad } from "@/lib/identidad";
+import { applyBoards, type BoardBed } from "@/lib/boards";
 
 export type BedEstado =
   | "OCUPADA"
@@ -44,6 +45,8 @@ export type InternacionBed = {
   ingreso?: string | null;
   primera_vista?: string | null;
   partes_visto?: number;
+  /** Presente cuando la cama viene de una planilla vigente publicada desde una foto. */
+  board?: BoardBed;
 };
 
 type File = {
@@ -63,7 +66,7 @@ export const PARTE_NOTES = file.notes;
 export const BEDS: InternacionBed[] = file.beds;
 
 function liveBeds(): InternacionBed[] {
-  return applyIdentidad(BEDS);
+  return applyBoards(applyIdentidad(BEDS));
 }
 
 function liveMeta() {
@@ -191,7 +194,7 @@ export function searchBeds(q: string) {
   if (!n) return list;
   return list.filter((b) =>
     fold(
-      [b.servicio, b.cama, b.sala, b.paciente, b.diagnostico, b.edad, b.observaciones]
+      [b.servicio, b.cama, b.sala, b.paciente, b.diagnostico, b.edad, b.observaciones, b.board?.dni, b.board?.hc]
         .filter(Boolean)
         .join(" "),
     ).includes(n),
@@ -217,7 +220,7 @@ function fold(s: string) {
 }
 
 /** Días internado: FI del pizarrón si existe; si no, partes desde que apareció el nombre. */
-export function diasInternacion(bed: InternacionBed, hoy = PARTE_FECHA) {
+export function diasInternacion(bed: InternacionBed, hoy = bed.board ? new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Mendoza" }) : PARTE_FECHA) {
   const fi = bed.ingreso && /^\d{4}-\d{2}-\d{2}$/.test(bed.ingreso) ? bed.ingreso : null;
   const start = fi || (bed.primera_vista && /^\d{4}-\d{2}-\d{2}$/.test(bed.primera_vista) ? bed.primera_vista : hoy);
   const a = Date.parse(`${start}T12:00:00`);

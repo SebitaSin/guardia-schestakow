@@ -2,6 +2,7 @@ import type { InternacionBed } from "@/data/internacion";
 import { diasInternacion } from "@/data/internacion";
 import { confirmarCama, nombrePizarron } from "@/lib/identidad";
 import { cn } from "@/lib/utils";
+import { BoardBedCard } from "@/components/board-bed-card";
 
 export function ageLabel(edad: string | null) {
   if (!edad) return null;
@@ -17,6 +18,11 @@ function estadoClass(estado: InternacionBed["estado"]) {
 }
 
 export function BedCard({ bed }: { bed: InternacionBed }) {
+  if (bed.board) return <BoardBedCard bed={bed} />;
+  return <ParteBedCard bed={bed} />;
+}
+
+function ParteBedCard({ bed }: { bed: InternacionBed }) {
   const empty = bed.estado === "LIBRE";
   const nombre = nombrePizarron(bed);
   const pendiente =

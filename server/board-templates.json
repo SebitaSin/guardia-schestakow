@@ -1,0 +1,483 @@
+{
+ "nota": "Planillas en blanco de cada servicio, pasadas por Sebastián el 5/10/2026. Sirven para reconocer el servicio por el título y saber qué columnas y camas esperar. No contienen pacientes. 'servicio' y 'slug' son los nombres que ya usa la app. 'camas_sin_confirmar' = la planilla no coincide con el catálogo de la app y falta que Sebastián diga cuál vale.",
+ "planillas": [
+  {
+   "titulo": "CLÍNICA MÉDICA I",
+   "servicio": "Clínica Médica 2",
+   "slug": "clinica-2",
+   "alias": [
+    "CLINICA MEDICA I"
+   ],
+   "solo_titulo": true,
+   "columnas": [
+    "SALA Y CAMA",
+    "FECHA INGRESO",
+    "EDAD",
+    "NOMBRE Y APELLIDO",
+    "DIAGNÓSTICO",
+    "MUTUAL / DNI"
+   ],
+   "camas": [
+    "515/1",
+    "515/2",
+    "516/1",
+    "516/2",
+    "517/1",
+    "517/2",
+    "518/1",
+    "518/2",
+    "519/1",
+    "519/2",
+    "520/1",
+    "520/2",
+    "521/1",
+    "521/2",
+    "522/1",
+    "522/2",
+    "523/1",
+    "523/2",
+    "524/1",
+    "525/1",
+    "526/1"
+   ]
+  },
+  {
+   "titulo": "SALUD MENTAL",
+   "servicio": "Salud Mental",
+   "slug": "salud-mental",
+   "alias": [
+    "SALUD MENTAL"
+   ],
+   "camas_sin_confirmar": true,
+   "columnas": [
+    "HAB",
+    "APELLIDO",
+    "NOMBRE",
+    "EDAD",
+    "DNI",
+    "HC",
+    "DX",
+    "OS"
+   ],
+   "camas": [
+    "1/1",
+    "1/2",
+    "2/1",
+    "2/2",
+    "3/1",
+    "3/2",
+    "4/1",
+    "4/2",
+    "5/1",
+    "5/2",
+    "6/1",
+    "6/2",
+    "7/1",
+    "7/2",
+    "8/1",
+    "9/1",
+    "9/2",
+    "10/1",
+    "10/2",
+    "11/1",
+    "11/2"
+   ]
+  },
+  {
+   "titulo": "UCCYQ",
+   "servicio": "UCCyQ",
+   "slug": "uccyq",
+   "alias": [
+    "UCCYQ",
+    "UCCQ"
+   ],
+   "camas_sin_confirmar": true,
+   "columnas": [
+    "HAB",
+    "APELLIDO NOMBRE",
+    "EDAD",
+    "O. SOCIAL",
+    "DNI",
+    "DIAGNOSTICO",
+    "FECHA"
+   ],
+   "camas": [
+    "317/1",
+    "317/2",
+    "318",
+    "319",
+    "320",
+    "321",
+    "322",
+    "323",
+    "325",
+    "326"
+   ]
+  },
+  {
+   "titulo": "PEDIATRIA ALA ESTE",
+   "servicio": "Pediatría Ala Este",
+   "slug": "pediatria-este",
+   "alias": [
+    "PEDIATRIA ALA ESTE",
+    "ALA ESTE",
+    "PED ALA ESTE"
+   ],
+   "columnas": [
+    "Habitación y número de cama, con una línea para el nombre"
+   ],
+   "camas": [
+    "115/1",
+    "115/2",
+    "115/3",
+    "115/4",
+    "115/5",
+    "115/6",
+    "116/1",
+    "116/2",
+    "116/3",
+    "116/4",
+    "116/5",
+    "116/6",
+    "117/1",
+    "117/2",
+    "117/3",
+    "117/4",
+    "117/5",
+    "117/6",
+    "118/1",
+    "118/2",
+    "118/3",
+    "118/4",
+    "118/5",
+    "118/6",
+    "119/1",
+    "119/2",
+    "119/3",
+    "120/1",
+    "121/1",
+    "122/1"
+   ]
+  },
+  {
+   "titulo": "PEDIATRÍA ALA NORTE",
+   "servicio": "Pediatría Ala Norte",
+   "slug": "pediatria-norte",
+   "alias": [
+    "PEDIATRIA ALA NORTE",
+    "ALA NORTE",
+    "PED ALA NORTE"
+   ],
+   "columnas": [
+    "Habitación y número de cama, con una línea para el nombre"
+   ],
+   "camas": [
+    "103/1",
+    "103/2",
+    "103/3",
+    "104/1",
+    "104/2",
+    "104/3",
+    "105/1",
+    "105/2",
+    "105/3",
+    "106/1",
+    "106/2",
+    "106/3",
+    "107/1",
+    "107/2",
+    "107/3",
+    "107/4",
+    "107/5",
+    "107/6",
+    "108/1"
+   ]
+  },
+  {
+   "titulo": "PLANILLA DE PACIENTES INTERNADOS UTI A",
+   "servicio": "UTI adultos",
+   "slug": "terapia-intensiva",
+   "alias": [
+    "UTI A",
+    "UTIA",
+    "UTI ADULTOS",
+    "TERAPIA INTENSIVA ADULTOS",
+    "TERAPIA ADULTOS",
+    "UTI"
+   ],
+   "columnas": [
+    "CAMA",
+    "APELLIDO Y NOMBRE",
+    "HC",
+    "DNI",
+    "EDAD",
+    "OBRA SOCIAL",
+    "FECHA NAC.",
+    "INGRESO",
+    "DIAGNOSTICO"
+   ],
+   "camas": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10"
+   ]
+  },
+  {
+   "titulo": "UCO",
+   "servicio": "UCO",
+   "slug": "uco",
+   "alias": [
+    "UCO"
+   ],
+   "camas_sin_confirmar": true,
+   "columnas": [
+    "CAMA",
+    "APELLIDO Y NOMBRE",
+    "EDAD",
+    "FECHA INGR",
+    "DNI",
+    "DIAG",
+    "OBRA SOCIAL",
+    "OTROS"
+   ],
+   "camas": [
+    "C/1",
+    "C/2",
+    "C/3",
+    "C/4",
+    "C/5",
+    "C/6"
+   ]
+  },
+  {
+   "titulo": "UTI PEDIATRICA",
+   "servicio": "UTI pediátrica",
+   "slug": "tip",
+   "alias": [
+    "UTI PEDIATRICA",
+    "UTI PED",
+    "UTIP",
+    "TERAPIA PEDIATRICA"
+   ],
+   "camas_sin_confirmar": true,
+   "columnas": [
+    "CAMA",
+    "APELLIDO Y NOMBRE",
+    "EDAD",
+    "F. INGRESO",
+    "DNI",
+    "DIAGN.",
+    "O. SOCIAL",
+    "OTROS"
+   ],
+   "camas": [
+    "01",
+    "02",
+    "03",
+    "04",
+    "05",
+    "06",
+    "07",
+    "08"
+   ]
+  },
+  {
+   "titulo": "GINECOLOGIA",
+   "servicio": "Ginecología",
+   "slug": "ginecologia",
+   "alias": [
+    "GINECOLOGIA"
+   ],
+   "camas_sin_confirmar": true,
+   "columnas": [
+    "SALA Y CAMA",
+    "APELLIDO Y NOMBRE",
+    "EDAD",
+    "DIAGNÓSTICO",
+    "FECHA - HORA",
+    "MUTUAL",
+    "D.N.I"
+   ],
+   "camas": []
+  },
+  {
+   "titulo": "TRAUMATOLOGIA",
+   "servicio": "Traumatología",
+   "slug": "traumatologia",
+   "alias": [
+    "TRAUMATOLOGIA",
+    "TRAUMATO"
+   ],
+   "camas_sin_confirmar": true,
+   "columnas": [
+    "SALA",
+    "APELLIDO Y NOMBRE",
+    "HC / DNI",
+    "DIAGNOSTICO",
+    "FECHA INGRESO",
+    "MUTUAL",
+    "OBRA SOCIAL",
+    "EDAD"
+   ],
+   "camas": [
+    "401/1",
+    "401/2",
+    "402/1",
+    "402/2",
+    "403/1",
+    "403/2",
+    "404/1",
+    "404/2",
+    "405/1",
+    "405/2",
+    "406/1",
+    "406/2",
+    "407/1",
+    "407/2",
+    "408/1",
+    "408/2",
+    "409/1",
+    "409/2",
+    "410",
+    "411",
+    "412"
+   ]
+  },
+  {
+   "titulo": "S.I.A.P.S.",
+   "servicio": null,
+   "slug": null,
+   "alias": [
+    "S I A P S",
+    "SIAPS",
+    "SIIAPS"
+   ],
+   "camas_sin_confirmar": true,
+   "columnas": [
+    "SALA",
+    "APELLIDO Y NOMBRE",
+    "EDAD",
+    "DIAGNÓSTICO",
+    "FECHA - HORA",
+    "MUTUAL",
+    "D.N.I",
+    "HC Nº",
+    "FECHA DE NACIMIENTO",
+    "PERMISO DE SALIDA"
+   ],
+   "camas": [
+    "6/1",
+    "6/2",
+    "7/1",
+    "7/2",
+    "7/3",
+    "8/1",
+    "8/2",
+    "1/1",
+    "1/2",
+    "1/3"
+   ]
+  },
+  {
+   "titulo": "UROLOGIA",
+   "servicio": "Urología",
+   "slug": "urologia",
+   "alias": [
+    "UROLOGIA"
+   ],
+   "columnas": [
+    "(cama)",
+    "APELLIDO Y NOMBRE",
+    "EDAD",
+    "HISTORIA CLINICA",
+    "D.N.I.",
+    "MUTUAL",
+    "DIAGNÓSTICO",
+    "POST QUIRÚRGICO",
+    "FECHA Y HORA DE INGRESO",
+    "ANT. PATOLÓGICOS"
+   ],
+   "camas": [
+    "615/1",
+    "615/2",
+    "616/1",
+    "616/2",
+    "617/1",
+    "617/2",
+    "618/1",
+    "618/2"
+   ]
+  },
+  {
+   "titulo": "CIRUGIA",
+   "servicio": "Cirugía",
+   "slug": "cirugia",
+   "alias": [
+    "CIRUGIA"
+   ],
+   "columnas": [
+    "SALA",
+    "APELLIDO Y NOMBRE / DIAGNOSTICO / ENFERMEDADES CRONICAS",
+    "MUTUAL",
+    "EDAD",
+    "H.C. / FECHA Y HORA DE INGRESO"
+   ],
+   "camas": [
+    "301/1",
+    "301/2",
+    "302/1",
+    "302/2",
+    "303/1",
+    "303/2",
+    "304/1",
+    "304/2",
+    "305/1",
+    "305/2",
+    "306/1",
+    "306/2",
+    "307/1",
+    "307/2",
+    "308/1",
+    "308/2",
+    "309/1",
+    "309/2",
+    "310",
+    "311",
+    "312",
+    "313",
+    "314"
+   ]
+  },
+  {
+   "titulo": "MATERNIDAD",
+   "servicio": "Maternidad",
+   "slug": "obstetricia",
+   "alias": [
+    "MATERNIDAD",
+    "OBSTETRICIA"
+   ],
+   "columnas": [],
+   "camas": [],
+   "camas_sin_confirmar": true
+  },
+  {
+   "titulo": "NEONATOLOGIA",
+   "servicio": "Neonatología",
+   "slug": "neonatologia",
+   "alias": [
+    "NEONATOLOGIA",
+    "NEO"
+   ],
+   "columnas": [],
+   "camas": [],
+   "camas_sin_confirmar": true
+  }
+ ]
+}

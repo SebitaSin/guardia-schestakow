@@ -7,7 +7,12 @@ const EVENT = "schestakow-catalog";
 const MAX_CACHE_CHARS = 1_500_000;
 
 export type UnreadFile = { id: string; filename: string; mailDate: string; departments: string[] };
-type LiveState = { generatedAt: string | null; mailAt: string | null; documents: GuardiaDoc[]; unread: UnreadFile[] };
+/** Guardia corregida a mano en la pantalla principal. Clave: "AAAA-MM-DD|servicio". */
+export type ManualDuty = { text: string; by: string; at: string };
+/** Reclamo de planillas faltantes, calculado por el servidor (scripts/reclamos.py). */
+export type ClaimInfo = { to: string[]; status: "pendiente" | "recibida" | "excluido" | "cancelado"; sent: number; lastSent: string | null };
+export type ClaimsState = { enabled: boolean; month: string | null; services: Record<string, ClaimInfo> };
+type LiveState = { generatedAt: string | null; mailAt: string | null; documents: GuardiaDoc[]; unread: UnreadFile[]; reclamos?: ClaimsState | null; manual?: Record<string, ManualDuty> };
 
 function validDoc(value: unknown): value is GuardiaDoc {
   const doc = value as Partial<GuardiaDoc> | null;
@@ -33,11 +38,30 @@ export function liveUnread(): UnreadFile[] {
   return state.unread;
 }
 
+export function liveManual(): Record<string, ManualDuty> {
+  return state.manual ?? {};
+}
+
+/** Guarda en el servidor quién está de guardia ese día en ese servicio. Texto vacío: vuelve a valer la planilla. */
+export async function saveManualDuty(slug: string, date: string, text: string): Promise<boolean> {
+  try {
+    const response = await fetch("/api/guardias/manual", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ slug, date, text }), signal: AbortSignal.timeout(10_000) });
+    if (!response.ok) return false;
+    return refreshLive();
+  } catch {
+    return false;
+  }
+}
+
+export function liveClaims(): ClaimsState | null {
+  return state.reclamos ?? null;
+}
+
 export function liveUpdatedAt(): string | null {
   return state.mailAt ?? state.generatedAt;
 }
 
-type LiveResponse = { generatedAt: string | null; documents: unknown[]; unread?: UnreadFile[]; mail?: { at: string | null }; running?: boolean };
+type LiveResponse = { generatedAt: string | null; documents: unknown[]; unread?: UnreadFile[]; mail?: { at: string | null }; running?: boolean; reclamos?: ClaimsState; manual?: Record<string, ManualDuty> };
 
 async function fetchLive(): Promise<LiveResponse> {
   const response = await fetch("/api/catalog/live", { signal: AbortSignal.timeout(10_000) });
@@ -51,8 +75,8 @@ export async function refreshLive(): Promise<boolean> {
     const data = await fetchLive();
     const documents = (Array.isArray(data.documents) ? data.documents : []).filter(validDoc);
     const unread = (Array.isArray(data.unread) ? data.unread : []).filter((item) => item && typeof item.id === "string" && typeof item.filename === "string");
-    const next: LiveState = { generatedAt: data.generatedAt ?? null, mailAt: data.mail?.at ?? null, documents, unread };
-    const changed = next.generatedAt !== state.generatedAt || next.mailAt !== state.mailAt || documents.length !== state.documents.length || unread.length !== state.unread.length;
+    const next: LiveState = { generatedAt: data.generatedAt ?? null, mailAt: data.mail?.at ?? null, documents, unread, reclamos: data.reclamos && typeof data.reclamos.services === "object" ? data.reclamos : null, manual: data.manual && typeof data.manual === "object" ? data.manual : {} };
+    const changed = next.generatedAt !== state.generatedAt || next.mailAt !== state.mailAt || documents.length !== state.documents.length || unread.length !== state.unread.length || JSON.stringify(next.reclamos ?? null) !== JSON.stringify(state.reclamos ?? null) || JSON.stringify(next.manual ?? {}) !== JSON.stringify(state.manual ?? {});
     state = next;
     if (changed) {
       const raw = JSON.stringify(next);
@@ -60,6 +84,17 @@ export async function refreshLive(): Promise<boolean> {
       window.dispatchEvent(new Event(EVENT));
     }
     return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Cancela o reanuda el reclamo automático de un servicio para el mes en curso. */
+export async function pauseClaim(slug: string, paused: boolean): Promise<boolean> {
+  try {
+    const response = await fetch("/api/reclamos/pause", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ slug, paused }), signal: AbortSignal.timeout(10_000) });
+    if (!response.ok) return false;
+    return refreshLive();
   } catch {
     return false;
   }

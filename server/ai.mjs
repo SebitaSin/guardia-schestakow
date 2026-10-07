@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { readJson, writeJsonAtomic } from "./store.mjs";
+import { templateGuide } from "./board-templates.mjs";
 
 const SCHEMA = {
   type: "object",
@@ -10,10 +11,12 @@ const SCHEMA = {
     rows: {
       type: "array", maxItems: 100, items: {
         type: "object", additionalProperties: false,
-        required: ["service", "room", "bed", "patient", "diagnosis", "arm", "post_surgical", "observations", "confidence"],
+        required: ["service", "room", "bed", "patient", "dni", "age", "hc", "insurance", "admission", "diagnosis", "arm", "post_surgical", "observations", "confidence"],
         properties: {
           service: { type: ["string", "null"] }, room: { type: ["string", "null"] }, bed: { type: ["string", "null"] },
-          patient: { type: ["string", "null"] }, diagnosis: { type: ["string", "null"] }, arm: { type: ["boolean", "null"] },
+          patient: { type: ["string", "null"] }, dni: { type: ["string", "null"] }, age: { type: ["string", "null"] }, hc: { type: ["string", "null"] },
+          insurance: { type: ["string", "null"] }, admission: { type: ["string", "null"] },
+          diagnosis: { type: ["string", "null"] }, arm: { type: ["boolean", "null"] },
           post_surgical: { type: ["boolean", "null"] }, observations: { type: ["string", "null"] },
           confidence: { type: "integer", minimum: 0, maximum: 100 },
         },
@@ -52,12 +55,18 @@ export async function verifyOpenAi(config, fetchImpl = fetch) {
     if (!response.ok) return { ok: false, reason: response.status === 401 ? "invalid_key" : `openai_http_${response.status}`, model: config.model };
     const body = await response.json().catch(() => ({}));
     const available = Array.isArray(body?.data) ? body.data.some((item) => item?.id === config.model) : true;
-    return { ok: available, reason: available ? "verified" : "model_not_found", model: config.model };
+    const models = Array.isArray(body?.data) ? body.data.map((item) => String(item?.id ?? "")).filter((id) => /^gpt-/.test(id)).sort().slice(0, 80) : [];
+    return { ok: available, reason: available ? "verified" : "model_not_found", model: config.model, ...(available ? {} : { models }) };
   } catch (error) {
     return { ok: false, reason: String(error?.name ?? "openai_unreachable"), model: config.model };
   }
 }
 
+const PROMPT_VERSION = 4;
+export function cachedReading(dataDir, sourceHash) {
+  const cached = readJson(join(dataDir, "ai", "cache", `${sourceHash}.json`), null);
+  return cached?.promptVersion === PROMPT_VERSION ? cached : null;
+}
 function monthKey(date = new Date()) { return date.toISOString().slice(0, 7); }
 let aiQueue = Promise.resolve();
 function outputText(response) {
@@ -73,7 +82,7 @@ function imageMime(path, bytes) {
 async function analyzeBoardImageOnce({ imagePath, sourceHash, dataDir, config, fetchImpl = fetch }) {
   if (!aiReady(config)) throw new Error("ai_not_configured_or_not_authorized_for_clinical_data");
   const cachePath = join(dataDir, "ai", "cache", `${sourceHash}.json`);
-  const cached = readJson(cachePath, null);
+  const cached = cachedReading(dataDir, sourceHash);
   if (cached) return { ...cached, cached: true };
   const usagePath = join(dataDir, "ai", `usage-${monthKey()}.json`);
   const usage = readJson(usagePath, { calls: 0, inputTokens: 0, outputTokens: 0, estimatedUsd: 0 });
@@ -88,10 +97,10 @@ async function analyzeBoardImageOnce({ imagePath, sourceHash, dataDir, config, f
       model: config.model,
       store: false,
       reasoning: { effort: "low" },
-      max_output_tokens: 900,
-      prompt_cache_key: "schestakow-pizarron-v2",
+      max_output_tokens: 6000,
+      prompt_cache_key: "schestakow-pizarron-v4",
       input: [{ role: "user", content: [
-        { type: "input_text", text: "Transcribí este pizarrón hospitalario con máxima fidelidad, fila por fila. Los nombres pueden estar impresos con tipografía similar a Arial de aproximadamente 14 puntos; es sólo una pista visual. Conservá la ortografía visible, no infieras ni completes nombres, diagnósticos, camas o servicios. Usá null cuando algo no sea legible y bajá la confianza. No tomes decisiones clínicas. La aplicación contrastará luego cada fila con fuentes registradas." },
+        { type: "input_text", text: "Transcribí este pizarrón hospitalario con máxima fidelidad, fila por fila. Los nombres pueden estar impresos con tipografía similar a Arial de aproximadamente 14 puntos; es sólo una pista visual. Conservá la ortografía visible, no infieras ni completes nombres, diagnósticos, camas o servicios. Usá null cuando algo no sea legible y bajá la confianza. No tomes decisiones clínicas. La aplicación contrastará luego cada fila con fuentes registradas.\n\nUna fila por cada cama que se ve en la foto, en el orden de la planilla, también las vacías: una cama vacía lleva su etiqueta en bed y null en todo lo demás. Una cama que la foto no muestra (cortada o tapada) no se incluye. Campos: service = título de la planilla tal como figura en la foto (null si no se ve); bed = etiqueta de la cama tal como figura; patient = apellido y nombre; dni = sólo los dígitos que se lean; age = edad; hc = historia clínica; insurance = obra social o mutual; admission = fecha u hora de ingreso; diagnosis = diagnóstico. Si una columna no existe en esa planilla, null.\n\nPlanillas del hospital (sirven sólo para ubicar título, columnas y etiquetas de cama; nunca para completar algo que no se ve en la foto):\n" + templateGuide() },
         { type: "input_image", detail: "high", image_url: `data:${imageMime(imagePath, bytes)};base64,${bytes.toString("base64")}` },
       ] }],
       text: { format: { type: "json_schema", name: "hospital_board_transcription", strict: true, schema: SCHEMA } },
@@ -104,7 +113,7 @@ async function analyzeBoardImageOnce({ imagePath, sourceHash, dataDir, config, f
   const inputTokens = Number(raw.usage?.input_tokens ?? 0);
   const outputTokens = Number(raw.usage?.output_tokens ?? 0);
   const estimatedUsd = inputTokens * config.inputRate / 1_000_000 + outputTokens * config.outputRate / 1_000_000;
-  const result = { sourceHash, status: "A_CONFIRMAR", model: config.model, rows: parsed.rows, generalObservations: parsed.general_observations, usage: { inputTokens, outputTokens, estimatedUsd }, createdAt: new Date().toISOString(), cached: false };
+  const result = { sourceHash, promptVersion: PROMPT_VERSION, status: "A_CONFIRMAR", model: config.model, rows: parsed.rows, generalObservations: parsed.general_observations, usage: { inputTokens, outputTokens, estimatedUsd }, createdAt: new Date().toISOString(), cached: false };
   writeJsonAtomic(cachePath, result);
   writeJsonAtomic(usagePath, { calls: usage.calls + 1, inputTokens: usage.inputTokens + inputTokens, outputTokens: usage.outputTokens + outputTokens, estimatedUsd: usage.estimatedUsd + estimatedUsd });
   return result;

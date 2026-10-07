@@ -1,21 +1,14 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
-  Bell,
   BedDouble,
   CalendarDays,
-  Camera,
-  FolderSearch,
   Hospital,
-  LayoutDashboard,
   LayoutGrid,
-  Mail,
   Menu,
-  MessageCircle,
   LogOut,
   Search,
   Shield,
   UserRound,
-  Users,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -29,23 +22,20 @@ import { matchesDutyQuery } from "@/lib/duty-query";
 import { cn } from "@/lib/utils";
 
 const SIDE = [
+  { to: "/", label: "Guardias de hoy", icon: CalendarDays, match: "guardias" },
+  { to: "/internados/camas", label: "Servicios, camas y pacientes", icon: BedDouble, match: "camas" },
   { to: "/plantel", label: "Personal", icon: UserRound, match: "plantel" },
-  { to: "/", label: "Guardias en tiempo real", icon: CalendarDays, match: "guardias" },
   { to: "/continuidad", label: "Contingencia", icon: Shield, match: "continuidad" },
-  { to: "/internados", label: "Estado hospitalario", icon: LayoutDashboard, match: "dashboard" },
-  { to: "/servicios", label: "Servicios", icon: LayoutGrid, match: "servicios" },
-  { to: "/internados/camas", label: "Camas", icon: BedDouble, match: "camas" },
-  { to: "/internados/pacientes", label: "Pacientes", icon: Users, match: "pacientes" },
-  { to: "/internados/alertas", label: "Alertas", icon: Bell, match: "alertas" },
-  { to: "/comunicaciones", label: "Comunicaciones", icon: MessageCircle, match: "comunicaciones" },
-  { to: "/internados/captura", label: "Captura", icon: Camera, match: "captura" },
-  { to: "/cambios", label: "Cambios", icon: Mail, match: "cambios" },
-  { to: "/archivo", label: "Archivo", icon: FolderSearch, match: "archivo" },
+  { to: "/complementos", label: "Complementos", icon: LayoutGrid, match: "complementos" },
 ] as const;
+
+// Pantallas que viven dentro de Complementos: el menú las marca ahí y ofrecen volver.
+const COMPLEMENTOS = ["captura", "archivo", "cambios", "alertas", "dashboard", "comunicaciones"];
 
 function which(pathname: string) {
   if (pathname.startsWith("/personal-mapa")) return "plantel";
   if (pathname.startsWith("/continuidad")) return "continuidad";
+  if (pathname.startsWith("/complementos")) return "complementos";
   if (pathname.startsWith("/internados/captura")) return "captura";
   if (pathname.startsWith("/comunicaciones")) return "comunicaciones";
   if (pathname.startsWith("/internados/pacientes")) return "pacientes";
@@ -62,14 +52,15 @@ function which(pathname: string) {
 }
 
 function titleFor(key: string) {
-  if (key === "dashboard") return { h: "Estado hospitalario", s: "Camas, internación y alertas" };
-  if (key === "guardias") return { h: "Guardias en tiempo real", s: "08–20 · 20–08 · 24 horas" };
+  if (key === "complementos") return { h: "Complementos", s: "Fotos, archivo, cambios, alertas y mensajes" };
+  if (key === "dashboard") return { h: "Resumen del hospital", s: "Ocupación y días de internación" };
+  if (key === "guardias") return { h: "Guardias de hoy", s: "08–20 · 20–08 · 24 horas" };
   if (key === "servicios") return { h: "Servicios", s: "Cronogramas por servicio" };
-  if (key === "camas") return { h: "Camas", s: "Mapa de internación" };
+  if (key === "camas") return { h: "Servicios", s: "Camas y pacientes de cada servicio" };
   if (key === "pacientes") return { h: "Pacientes", s: "Internados del parte diario" };
   if (key === "alertas") return { h: "Alertas", s: "Ocupación y lecturas a revisar" };
-  if (key === "continuidad") return { h: "Contingencia", s: "Clima, recorridos, transporte y apoyo" };
-  if (key === "captura") return { h: "Captura", s: "WhatsApp → internados, sin tocar secretaría" };
+  if (key === "continuidad") return { h: "Contingencia", s: "Clima, alertas y mapa" };
+  if (key === "captura") return { h: "Fotos de pizarras", s: "Lo que llega por WhatsApp y dónde se publicó" };
   if (key === "comunicaciones") return { h: "Comunicaciones", s: "Mensajes de WhatsApp a contactos y grupos" };
   if (key === "plantel") return { h: "Personal", s: "Plantel, transporte y mapa privado" };
   if (key === "cambios") return { h: "Cambios", s: "Permutas de cronograma por mail o a mano" };
@@ -85,7 +76,8 @@ export function HospitalShell({ children }: { children: ReactNode }) {
   const key = which(pathname);
   const titles = titleFor(key);
   const k = resumenHospital();
-  const duties = dutiesOn(todayISO()).filter((d) => d.text.trim()).length;
+  const [parteDay, parteMonth, parteYear] = formatParteFecha().slice(0, 10).split("/").map(Number);
+  const parteFresh = Date.now() - new Date(parteYear, parteMonth - 1, parteDay).getTime() < 14 * 86_400_000;
 
   const hits = useMemo(() => {
     const n = q.trim();
@@ -120,7 +112,7 @@ export function HospitalShell({ children }: { children: ReactNode }) {
   const nav = (
     <nav className="flex flex-1 flex-col gap-1 p-3">
       {SIDE.map((item) => {
-        const active = key === item.match;
+        const active = key === item.match || (item.match === "complementos" && COMPLEMENTOS.includes(key)) || (item.match === "camas" && key === "servicios");
         return (
           <Link
             key={item.to}
@@ -136,13 +128,6 @@ export function HospitalShell({ children }: { children: ReactNode }) {
         );
       })}
       <div className="mt-auto space-y-2 pt-6">
-        <Link
-          to="/internados/captura"
-          className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm text-nav-muted hover:text-nav-fg"
-        >
-          <Camera className="size-4" strokeWidth={1.75} />
-          Actualizar desde foto
-        </Link>
         <form method="post" action="/api/logout">
           <button type="submit" className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-sm text-nav-muted hover:text-nav-fg">
             <LogOut className="size-4" strokeWidth={1.75} />
@@ -199,6 +184,7 @@ export function HospitalShell({ children }: { children: ReactNode }) {
               <Menu className="size-5" />
             </button>
             <div className="min-w-0 flex-1">
+              {COMPLEMENTOS.includes(key) ? <Link to="/complementos" className="block text-xs font-medium text-primary">← Complementos</Link> : null}
               <h1 className="truncate text-lg font-semibold leading-tight">{titles.h}</h1>
               <p className="truncate text-sm text-muted">{titles.s}</p>
             </div>
@@ -267,17 +253,54 @@ export function HospitalShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 overflow-x-clip px-4 py-4 pb-24 md:px-6 md:py-6">{children}</main>
+        <main className="min-w-0 flex-1 overflow-x-clip px-4 py-4 pb-24 md:px-6 md:py-6"><AlertBar />{children}</main>
 
+{/* El resumen de camas sólo se muestra si el parte tiene menos de dos semanas: un parte viejo no es dato vigente. */}
+        {parteFresh ? (
         <footer className="fixed inset-x-0 bottom-0 z-20 flex flex-wrap gap-x-5 gap-y-1 bg-nav px-4 py-2 pb-safe-b text-xs text-nav-fg md:left-56">
           <span>{k.libres} camas libres</span>
           <span>{k.aislamiento} aislamiento</span>
           <span>{k.arm} ARM</span>
           <span>{k.postqx} postquirúrgicos</span>
-          <span>{duties} guardias hoy</span>
           <span className="md:ml-auto">{BEDS.length} camas en el parte · {formatParteFecha()}</span>
         </footer>
+        ) : null}
       </div>
     </div>
   );
 }
+
+/** Barra que aparece en todas las pantallas cuando el nivel de alerta de Contingencia no es verde. */
+const ALERT_BAR = {
+  amarillo: { box: "border-warn/40 bg-warn-soft text-fg", dot: "bg-[#d97706]", name: "Alerta amarilla" },
+  naranja: { box: "border-kpi-orange/50 bg-[#ffedd5] text-fg", dot: "bg-kpi-orange", name: "Alerta naranja" },
+  rojo: { box: "border-danger/50 bg-danger-soft text-fg", dot: "bg-danger", name: "Alerta roja" },
+} as const;
+
+function AlertBar() {
+  const [level, setLevel] = useState<{ color: string; grado?: number; nombre?: string; motivos: { origen: string; texto: string }[] } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/clima/nivel", { signal: AbortSignal.timeout(30_000) });
+        if (!response.ok) return;
+        const data = (await response.json()) as { nivel: { color: string; grado?: number; nombre?: string; motivos: { origen: string; texto: string }[] } | null };
+        if (alive) setLevel(data.nivel);
+      } catch { /* sin dato: no se muestra nada */ }
+    };
+    void load();
+    const timer = window.setInterval(load, 5 * 60_000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, []);
+  const style = level ? ALERT_BAR[level.color as keyof typeof ALERT_BAR] : undefined;
+  if (!level || !style) return null;
+  return (
+    <a href="/continuidad" className={`mb-3 flex items-center gap-2.5 rounded-xl border px-3 py-2 text-sm ${style.box}`} role="status">
+      <span className={`size-2.5 shrink-0 rounded-full ${style.dot}`} />
+      <span className="min-w-0"><b className="font-semibold">{level.grado ? `Alerta grado ${level.grado} de 9 · ${level.nombre}` : style.name}.</b> {level.motivos.slice(0, 2).map((reason) => `${reason.origen}: ${reason.texto}`).join(" · ")}</span>
+      <span className="ml-auto shrink-0 text-xs font-medium underline">Ver</span>
+    </a>
+  );
+}
+

@@ -1,11 +1,18 @@
 import { resolve } from "node:path";
 import { mkdirSync } from "node:fs";
+import { readJson, writeJsonAtomic } from "./store.mjs";
+import { verifyOpenAi } from "./ai.mjs";
+import { createWaLink } from "./wa-link/supervisor.mjs";
+import { createLabLookup } from "./lab-lookup.mjs";
 import { createHospitalServer } from "./app.mjs";
 import { loadAuthConfig } from "./auth.mjs";
 import { whatsappConfig } from "./whatsapp.mjs";
 import { createMailRunner, scheduleMailSync, scheduleWhatsAppDrafts } from "./scheduler.mjs";
 import { aiConfig } from "./ai.mjs";
+import { createWeatherWatch } from "./weather-watch.mjs";
+import { spawn } from "node:child_process";
 import { mapsConfig } from "./maps.mjs";
+import { createPhotoIntake } from "./photo-intake.mjs";
 
 const root = resolve(process.env.APP_ROOT || process.cwd());
 const dataDir = resolve(process.env.APP_DATA_DIR || resolve(root, "var"));
@@ -17,13 +24,30 @@ const internacionFile = resolve(process.env.APP_INTERNACION_FILE || resolve(root
 const host = process.env.APP_HOST || (process.env.PORT ? "0.0.0.0" : "127.0.0.1");
 const port = Number(process.env.APP_PORT || process.env.PORT || 8788);
 mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+// Parámetros no secretos de la lectura de pizarras por IA (la clave nunca va en este archivo).
+for (const [key, value] of Object.entries(readJson(resolve(root, "server", "ai-config.json"), {}))) { if (/^(AI_|OPENAI_MODEL$)/.test(key)) process.env[key] ??= String(value); }
 
 const mailRunner = createMailRunner({ root, dataDir });
 const authConfig = loadAuthConfig();
-const server = createHospitalServer({ distDir, dataDir, catalogFile, internacionFile, authConfig, waConfig: whatsappConfig(), ai: aiConfig(), maps: mapsConfig(), mailRunner });
+const waLink = createWaLink({ root, dataDir });
+const photoIntake = createPhotoIntake({ root, dataDir, ai: aiConfig(), waLink, internacionFile, lab: createLabLookup({ root }) });
+// Clima: se actualiza cada 10 minutos aunque nadie tenga la pantalla abierta, para detectar los cambios de nivel.
+// Cuando el nivel cambia, se intenta el aviso por correo (apagado hasta configurar server/avisos-config.json).
+const weatherWatch = createWeatherWatch({ dataDir, onLevelChange(change) {
+  const child = spawn(process.env.PYTHON_COMMAND || (process.platform === "win32" ? "python" : "python3"), [resolve(root, "scripts", "aviso_nivel.py")], { cwd: root, env: { ...process.env, APP_ROOT: root }, stdio: ["pipe", "ignore", "ignore"], windowsHide: true });
+  child.once("error", () => undefined);
+  child.stdin.end(JSON.stringify(change));
+} });
+const weatherTimer = setInterval(() => { weatherWatch.refresh().catch(() => undefined); }, 10 * 60_000);
+weatherTimer.unref();
+setTimeout(() => { weatherWatch.refresh().catch(() => undefined); }, 15_000).unref();
+const server = createHospitalServer({ distDir, dataDir, catalogFile, internacionFile, authConfig, waConfig: whatsappConfig(), ai: aiConfig(), maps: mapsConfig(), mailRunner, photoIntake, weatherWatch });
+photoIntake.start();
+waLink.start();
+if (aiConfig().enabled) verifyOpenAi(aiConfig()).then((result) => writeJsonAtomic(resolve(dataDir, "ai", "status.json"), { ...result, at: new Date().toISOString() })).catch(() => undefined);
 const stopSchedule = scheduleMailSync(mailRunner);
 const stopWhatsAppDrafts = scheduleWhatsAppDrafts(dataDir, authConfig.secret);
-server.once("close", () => { stopSchedule(); stopWhatsAppDrafts(); });
+server.once("close", () => { stopSchedule(); stopWhatsAppDrafts(); photoIntake.stop(); waLink.stop(); });
 server.listen(port, host, () => {
   process.stdout.write(`Hospital Schestakow listo en http://${host}:${port}\n`);
 });

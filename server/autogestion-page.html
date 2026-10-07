@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#0b1f3a">
+<meta property="og:title" content="Hospital Schestakow · Tus datos para emergencias">
+<meta property="og:description" content="Un minuto desde el celular. Sirve para organizar los traslados del personal si hay una catástrofe.">
+<title>Tus datos · Hospital Schestakow</title>
+<style>
+*{box-sizing:border-box}[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#f3f5f9;color:#172033;line-height:1.4}
+header{background:#0b1f3a;color:#fff;padding:18px 20px 46px}
+header small{display:block;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;opacity:.7}
+header h1{margin:4px 0 0;font-size:1.25rem;font-weight:650}
+main{max-width:520px;margin:-30px auto 0;padding:0 14px 40px}
+.card{background:#fff;border-radius:20px;padding:22px 20px;box-shadow:0 1px 2px rgba(11,31,58,.08),0 12px 32px -16px rgba(11,31,58,.25)}
+.dots{display:flex;gap:6px;margin-bottom:18px}.dots i{flex:1;height:4px;border-radius:4px;background:#e3e8f1}.dots i.on{background:#1d4ed8}
+h2{margin:0 0 6px;font-size:1.3rem;letter-spacing:-.01em}
+p{margin:0 0 14px;color:#51607a}
+label{display:block;font-size:.86rem;font-weight:600;margin:16px 0 6px}
+input,select{width:100%;font:inherit;font-size:1.05rem;padding:14px;border:1.5px solid #d5dbe7;border-radius:14px;background:#fff;color:inherit}
+input:focus,select:focus{outline:none;border-color:#1d4ed8;box-shadow:0 0 0 4px #dbe6ff}
+input.big{font-size:1.6rem;letter-spacing:.12em;text-align:center;font-variant-numeric:tabular-nums}
+.hint{font-size:.8rem;color:#6b7890;margin:6px 0 0}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:18px;padding:16px;border:0;border-radius:14px;background:#1d4ed8;color:#fff;font:inherit;font-size:1.05rem;font-weight:650;cursor:pointer;text-decoration:none}
+.btn:disabled{opacity:.55}.btn.wa{background:#128c4b}.btn.ghost{background:#eef2f9;color:#172033}
+.link{display:block;width:100%;margin-top:14px;padding:8px;border:0;background:none;color:#1d4ed8;font:inherit;font-size:.92rem;text-decoration:underline;cursor:pointer}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:8px}.opts.three{grid-template-columns:repeat(3,1fr)}.opts.four{grid-template-columns:repeat(4,1fr)}
+.opts button{padding:14px 8px;border:1.5px solid #d5dbe7;border-radius:14px;background:#fff;color:inherit;font:inherit;font-size:.95rem;font-weight:600;cursor:pointer}
+.opts button{min-width:0}.opts.three button{font-size:.82rem;padding:12px 4px}
+.opts.one{grid-template-columns:1fr}.opts.one button{text-align:left;padding:13px 14px;font-weight:550}.opts.one button.none{text-align:center;color:#51607a}
+.sep{height:1px;background:#e3e8f1;margin:22px 0 4px}
+.opts button span{display:block;font-size:1.5rem;line-height:1.2}
+.opts button[aria-pressed=true]{border-color:#1d4ed8;background:#e8efff;color:#1d4ed8}
+.who{display:flex;gap:12px;align-items:center;padding:14px;border-radius:14px;background:#f3f5f9;margin-bottom:6px}
+.who b{display:block;font-size:1.05rem}.who span{font-size:.85rem;color:#51607a}
+.who i{flex:none;display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:#1d4ed8;color:#fff;font-style:normal;font-weight:700}
+.err{margin:14px 0 0;padding:12px 14px;border-radius:12px;background:#fdecec;color:#a11b1b;font-size:.92rem}
+.note{margin:14px 0 0;padding:12px 14px;border-radius:12px;background:#fff6e5;color:#7a4a05;font-size:.9rem}
+.q{margin-top:6px;padding-top:2px}
+.bar{height:10px;border-radius:10px;background:#e3e8f1;overflow:hidden;margin:8px 0 4px}.bar i{display:block;height:100%;border-radius:10px;background:#128c4b;width:0;transition:width .8s ease}
+.stat{font-size:.88rem;color:#51607a;margin:0 0 12px}.stat b{color:#172033}
+.ok{display:grid;place-items:center;width:64px;height:64px;border-radius:50%;background:#e3f6ea;color:#128c4b;font-size:2rem;margin-bottom:12px}
+footer{max-width:520px;margin:0 auto;padding:0 20px 30px;font-size:.78rem;color:#6b7890;text-align:center}
+</style>
+</head>
+<body>
+<header><small>Hospital Teodoro J. Schestakow</small><h1>Tus datos para emergencias</h1></header>
+<main><div class="card">
+  <div class="dots" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></div>
+
+  <section data-step="dni">
+    <h2>Empecemos con tu DNI</h2>
+    <p>Es un minuto. Sirve para saber cómo llegás al hospital y organizar traslados si hay una tormenta grave u otra catástrofe.</p>
+    <form id="f-dni" novalidate>
+      <input class="big" id="dni" inputmode="numeric" autocomplete="off" maxlength="11" placeholder="Sin puntos" aria-label="Número de DNI">
+      <button class="btn" type="submit">Continuar</button>
+    </form>
+  </section>
+
+  <section data-step="clave" hidden>
+    <div class="who"><i id="who-i"></i><div><b id="who-n"></b><span id="who-s"></span></div></div>
+    <p id="ya" class="hint" hidden></p>
+    <form id="f-clave" novalidate>
+      <label for="ult4">Para mostrarte lo que ya tenemos cargado, escribí los últimos 4 números de tu celular</label>
+      <input class="big" id="ult4" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="• • • •">
+      <button class="btn" type="submit">Ver mis datos</button>
+    </form>
+    <button class="link" id="sin-clave" type="button">Cambié de número o no me acuerdo: los cargo de nuevo</button>
+    <button class="link" id="no-soy" type="button">No soy esa persona</button>
+  </section>
+
+  <section data-step="datos" hidden>
+    <h2 id="datos-t">Revisá tus datos</h2>
+    <p id="datos-p">Corregí lo que haya cambiado.</p>
+    <form id="f-datos" novalidate>
+      <div id="nueva" hidden>
+        <div class="note">Ese DNI no figura en la nómina. Cargá tus datos y la Dirección los revisa antes de sumarte.</div>
+        <label for="nombre">Apellido y nombre</label>
+        <input id="nombre" autocomplete="name" maxlength="160">
+      </div>
+      <label for="servicio">Servicio donde trabajás</label>
+      <input id="servicio" list="servicios" maxlength="120" autocomplete="off" placeholder="Ej.: Guardia, Terapia intensiva, Laboratorio"><datalist id="servicios"></datalist>
+      <label for="rol">Tu cargo o función</label>
+      <input id="rol" list="roles" maxlength="120" autocomplete="off" placeholder="Ej.: Enfermera, Médico, Administrativo">
+      <datalist id="roles"><option value="Médico/a"><option value="Enfermero/a"><option value="Técnico/a"><option value="Bioquímico/a"><option value="Farmacéutico/a"><option value="Kinesiólogo/a"><option value="Instrumentador/a"><option value="Administrativo/a"><option value="Camillero/a"><option value="Chofer"><option value="Mantenimiento"><option value="Limpieza / servicios generales"><option value="Cocina"><option value="Seguridad"></datalist>
+      <label for="address">Domicilio donde vivís</label>
+      <input id="address" autocomplete="street-address" maxlength="240" placeholder="Calle y número, barrio o distrito">
+      <p class="hint">Ejemplo: Av. Mitre 1250 · Los Filtros 340, Rama Caída</p>
+      <label for="phone">Celular</label>
+      <input id="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="40" placeholder="260 4 123456">
+
+      <label>¿Cómo venís habitualmente al hospital?</label>
+      <div class="opts three" data-group="mode">
+        <button type="button" data-value="CAR"><span>🚗</span>Auto o camioneta</button>
+        <button type="button" data-value="MOTORCYCLE"><span>🏍️</span>Moto</button>
+        <button type="button" data-value="PUBLIC_TRANSPORT"><span>🚌</span>Colectivo</button>
+        <button type="button" data-value="BICYCLE"><span>🚲</span>Bicicleta</button>
+        <button type="button" data-value="WALKING"><span>🚶</span>Caminando</button>
+        <button type="button" data-value="OTHER"><span>🤝</span>Me traen u otro</button>
+      </div>
+
+      <div class="q" id="q-seguro" hidden>
+        <label>Si hay una tormenta grave o una catástrofe, ¿podés contar con ese vehículo para llegar?</label>
+        <div class="opts" data-group="seguro"><button type="button" data-value="si">Sí</button><button type="button" data-value="no">No</button></div>
+      </div>
+      <div class="q" id="q-dispuesto" hidden>
+        <label>En ese caso, ¿pasarías a buscar a un compañero que quede en tu camino al hospital y no tenga cómo llegar?</label>
+        <div class="opts" data-group="dispuesto"><button type="button" data-value="si">Sí, cuenten conmigo</button><button type="button" data-value="no">No puedo</button></div>
+        <p class="hint">No cambia tu recorrido: sólo compañeros que queden de paso, y siempre se te avisa antes.</p>
+      </div>
+      <div class="q" id="q-lugares" hidden>
+        <label>¿Cuántos lugares libres tendrías?</label>
+        <div class="opts four" data-group="lugares"><button type="button" data-value="1">1</button><button type="button" data-value="2">2</button><button type="button" data-value="3">3</button><button type="button" data-value="4">4</button></div>
+      </div>
+      <div class="q" id="q-necesita" hidden>
+        <label>Si hay una tormenta grave o una catástrofe, ¿necesitarías que te pasen a buscar?</label>
+        <div class="opts" data-group="necesita"><button type="button" data-value="si">Sí</button><button type="button" data-value="no">No, llego por mi cuenta</button></div>
+      </div>
+      <div class="sep"></div>
+      <label>Si hay una inundación, un terremoto o un accidente con muchos heridos, ¿dónde sentís que podrías ayudar más, además de tu servicio?</label>
+      <p class="hint" style="margin:0 0 8px">Según lo que sabés hacer. Podés marcar más de uno. Sólo se usa en una catástrofe.</p>
+      <div class="opts one" id="ayuda">
+        <button type="button" data-value="triage">🚑 Recibir y clasificar heridos (triage)</button>
+        <button type="button" data-value="guardia">🏥 Guardia y emergencias</button>
+        <button type="button" data-value="criticos">🫀 Pacientes críticos (terapia intensiva)</button>
+        <button type="button" data-value="quirofano">🩹 Quirófano, trauma y quemados</button>
+        <button type="button" data-value="pediatria">👶 Niños y recién nacidos</button>
+        <button type="button" data-value="internacion">🛏️ Cuidado de pacientes internados</button>
+        <button type="button" data-value="traslado">🧑‍🦽 Trasladar pacientes: camilla, ambulancia, evacuación</button>
+        <button type="button" data-value="sangre">🩸 Laboratorio y banco de sangre</button>
+        <button type="button" data-value="farmacia">💊 Farmacia, insumos y oxígeno</button>
+        <button type="button" data-value="familias">🤝 Atender familiares, lista de víctimas, contención</button>
+        <button type="button" data-value="logistica">🔧 Luz, agua, mantenimiento y comunicaciones</button>
+        <button type="button" data-value="apoyo">🍲 Cocina, limpieza y lo que haga falta</button>
+        <button type="button" data-value="ninguno" class="none">Prefiero quedarme sólo en mi servicio</button>
+      </div>
+      <button class="btn" type="submit">Guardar</button>
+    </form>
+  </section>
+
+  <section data-step="listo" hidden>
+    <div class="ok">✓</div>
+    <h2>¡Listo, gracias!</h2>
+    <p id="listo-p">Tus datos quedaron guardados. Si algo cambia, entrá de nuevo con tu DNI y lo corregís.</p>
+    <div id="prog" hidden>
+      <div class="bar"><i id="bar-s"></i></div><p class="stat" id="stat-s"></p>
+      <div class="bar"><i id="bar-t"></i></div><p class="stat" id="stat-t"></p>
+    </div>
+    <p><b style="color:#172033">Ahora lo más importante:</b> reenviá este enlace a los grupos de WhatsApp del hospital en los que estés, para que llegue a todos.</p>
+    <button class="btn wa" id="share" type="button">Reenviar a mis grupos</button>
+    <button class="btn ghost" id="copy" type="button">Copiar el enlace</button>
+  </section>
+
+  <div class="err" id="err" role="alert" hidden></div>
+</div></main>
+<footer>Tus datos se guardan cifrados y sólo los ve la Dirección del hospital. Se usan únicamente para organizar al personal en una emergencia.</footer>
+<script src="/mis-datos.js"></script>
+</body>
+</html>

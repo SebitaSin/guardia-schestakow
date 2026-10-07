@@ -51,9 +51,38 @@ export function validatePrivateLocation(input, actor) {
   return { staffId, address, lat, lng, transportMode, updatedAt: new Date().toISOString(), updatedBy: actor };
 }
 
+/**
+ * Traslado solidario en catástrofe: quién tiene un vehículo seguro y aceptó pasar a buscar compañeros, y quién
+ * necesita que lo pasen a buscar. Es una declaración de la persona, con fecha y quién la cargó; no es una orden.
+ */
+export function normalizeSolidario(input, actor) {
+  const vehiculoSeguro = input?.vehiculoSeguro === true;
+  const dispuesto = vehiculoSeguro && input?.dispuesto === true; // sin vehículo seguro no se puede ofrecer a llevar a otros
+  const lugares = dispuesto ? Math.max(1, Math.min(4, Math.round(Number(input?.lugares) || 1))) : 0;
+  const necesitaTraslado = !dispuesto && !vehiculoSeguro && input?.necesitaTraslado === true;
+  return { vehiculoSeguro, dispuesto, lugares, necesitaTraslado, en: new Date().toISOString(), por: actor };
+}
+
+/** Guarda la disponibilidad de una persona que ya tiene domicilio en el mapa. */
+export function setSolidario(dataDir, secret, input, actor) {
+  const id = String(input?.staffId ?? "");
+  const all = readPrivateLocations(dataDir, secret);
+  const index = all.findIndex((item) => item.staffId === id);
+  if (index < 0) throw new Error("location_not_found");
+  const transportMode = input?.transportMode === undefined ? all[index].transportMode : String(input.transportMode);
+  if (!MODES.has(transportMode)) throw new Error("invalid_private_location");
+  all[index] = { ...all[index], transportMode, solidario: normalizeSolidario(input, actor) };
+  writePrivateLocations(dataDir, secret, all);
+  return all[index];
+}
+
 export function upsertPrivateLocation(dataDir, secret, input, actor) {
   const location = validatePrivateLocation(input, actor);
-  const all = readPrivateLocations(dataDir, secret).filter((item) => item.staffId !== location.staffId);
+  const previous = readPrivateLocations(dataDir, secret);
+  // Corregir el domicilio no borra lo que la persona declaró sobre el traslado solidario.
+  const kept = previous.find((item) => item.staffId === location.staffId)?.solidario;
+  if (kept) location.solidario = kept;
+  const all = previous.filter((item) => item.staffId !== location.staffId);
   all.push(location);
   writePrivateLocations(dataDir, secret, all);
   return location;

@@ -8,7 +8,10 @@ export type PrivateStaffLocation = {
   transportMode: TransportMode;
   updatedAt: string;
   updatedBy: string;
+  /** Traslado solidario en catástrofe: lo que la persona declaró, con fecha y quién lo cargó. */
+  solidario?: Solidario;
 };
+export type Solidario = { vehiculoSeguro: boolean; dispuesto: boolean; lugares: number; necesitaTraslado: boolean; en: string; por: string };
 
 export type MapsConfig = { configured: boolean; browserKey: string | null; routesKey: string | null };
 
@@ -73,6 +76,10 @@ export async function computeRoute(origin: RouteEndpoint, destination: RouteEndp
 
 export function savePrivateLocation(location: Pick<PrivateStaffLocation, "staffId" | "address" | "lat" | "lng" | "transportMode"> & { expectedAddress?: string }) {
   return api<{ location: PrivateStaffLocation }>("/api/continuidad/private-locations", { method: "POST", body: JSON.stringify(location) });
+}
+
+export function saveSolidario(input: { staffId: string; transportMode?: TransportMode; vehiculoSeguro: boolean; dispuesto: boolean; lugares: number; necesitaTraslado: boolean }) {
+  return api<{ location: PrivateStaffLocation }>("/api/continuidad/solidario", { method: "POST", body: JSON.stringify(input) });
 }
 
 export function removePrivateLocation(staffId: string) {

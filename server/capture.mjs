@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
 import { readJson, writeJsonAtomic } from "./store.mjs";
+import { matchTemplate } from "./board-templates.mjs";
 
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const ALLOWED_TYPES = new Map([
@@ -20,7 +21,7 @@ function hasImageSignature(bytes, contentType) {
   return false;
 }
 
-export function saveManualCapture({ dataDir, bytes, contentType, originalName, actor }) {
+export function saveManualCapture({ dataDir, bytes, contentType, originalName, actor, source = "CARGA_MANUAL", extra = {} }) {
   const normalizedType = String(contentType).split(";")[0].toLowerCase();
   const extension = ALLOWED_TYPES.get(normalizedType);
   if (!extension) throw new Error("unsupported_image_type");
@@ -35,8 +36,9 @@ export function saveManualCapture({ dataDir, bytes, contentType, originalName, a
   const duplicate = inbox.find((item) => item.hash === hash);
   if (duplicate) return { item: duplicate, duplicate: true };
   const item = {
+    ...extra,
     captura_id: randomUUID(),
-    fuente: "CARGA_MANUAL",
+    fuente: source,
     nombre_original: basename(String(originalName || "foto")).slice(0, 180),
     recibido_en: new Date().toISOString(),
     cargado_por: actor,
@@ -55,8 +57,13 @@ function publicItem(item) {
   return safe;
 }
 
+/** Capturas guardadas, con la ruta de la imagen (uso interno del servidor). */
+export function storedCaptures(dataDir) { return readJson(inboxPath(dataDir), []); }
+
 export function captureInbox(dataDir) {
-  const manual = readJson(inboxPath(dataDir), []).map(publicItem);
+  const published = readJson(join(dataDir, "boards", "processed.json"), {});
+  // El servicio según el texto del mensaje se calcula al mostrar, con las abreviaturas vigentes.
+  const manual = readJson(inboxPath(dataDir), []).map((item) => publicItem({ ...item, servicio: item.texto ? matchTemplate(item.texto)?.servicio ?? null : item.servicio ?? null, publicacion: published[item.hash] ?? null }));
   const whatsapp = readJson(join(dataDir, "whatsapp", "inbox.json"), []).filter((item) => item.tipo === "image").map((item) => publicItem({
     ...item,
     captura_id: item.mensaje_id,
@@ -67,7 +74,7 @@ export function captureInbox(dataDir) {
 
 export function findCapture(dataDir, captureId, { pendingOnly = true } = {}) {
   const sources = [
-    ...readJson(inboxPath(dataDir), []).map((item) => ({ ...item, fuente: "CARGA_MANUAL" })),
+    ...readJson(inboxPath(dataDir), []).map((item) => ({ ...item, origen: item.fuente, fuente: "CARGA_MANUAL" })),
     ...readJson(join(dataDir, "whatsapp", "inbox.json"), []).filter((item) => item.tipo === "image").map((item) => ({ ...item, captura_id: item.mensaje_id, fuente: "WHATSAPP_API" })),
   ];
   const item = sources.find((candidate) => candidate.captura_id === captureId);
@@ -92,7 +99,8 @@ export function validateConfirmedRows(rows) {
     const nullableBoolean = (value) => value === null || value === undefined ? null : typeof value === "boolean" ? value : (() => { throw new Error("invalid_boolean"); })();
     return {
       service: cleanString(row.service, 120), room: cleanString(row.room, 80), bed: cleanString(row.bed, 80),
-      patient: cleanString(row.patient, 180), diagnosis: cleanString(row.diagnosis, 300),
+      patient: cleanString(row.patient, 180), dni: cleanString(row.dni, 20), age: cleanString(row.age, 20), hc: cleanString(row.hc, 30),
+      insurance: cleanString(row.insurance, 80), admission: cleanString(row.admission, 40), diagnosis: cleanString(row.diagnosis, 300),
       arm: nullableBoolean(row.arm), post_surgical: nullableBoolean(row.post_surgical),
       observations: cleanString(row.observations, 500), confidence,
     };
@@ -105,7 +113,7 @@ export function recordHumanReview({ dataDir, capture, actor, role, decision, row
   const record = {
     captura_id: capture.captura_id,
     sourceHash: capture.hash,
-    source: capture.fuente ?? "WHATSAPP_API",
+    source: capture.origen ?? capture.fuente ?? "WHATSAPP_API",
     decision,
     rows: confirmedRows,
     reviewedBy: actor,

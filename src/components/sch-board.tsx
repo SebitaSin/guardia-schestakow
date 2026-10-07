@@ -362,17 +362,16 @@ function nodeName(id: string) {
 }
 
 export const TABS = [
-  { to: "/continuidad", label: "Ahora" },
-  { to: "/continuidad/turno", label: "Próximo turno" },
+  { to: "/continuidad", label: "Clima y alertas" },
   { to: "/continuidad/mapa", label: "Mapa" },
-  { to: "/continuidad/transporte", label: "Transporte" },
-  { to: "/continuidad/historial", label: "Historial" },
-  { to: "/continuidad/config", label: "Configuración" },
 ] as const;
+// Fuera de las pestañas desde el 6/10/2026 (las pantallas siguen en sus direcciones): el tablero de riesgo
+// (/continuidad/ahora), Transporte, Próximo turno, Historial, Configuración y el plan imprimible. Calculan sobre
+// personal, dotación y caminos que todavía no tienen datos reales; vuelven cuando anden los puntos 4, 5 y 6.
 
 export function ContinuidadTabs({ current }: { current: string }) {
   return (
-    <nav className="flex flex-wrap gap-2">
+    <nav className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:flex-wrap md:overflow-visible md:px-0 [&>*]:shrink-0">
       {TABS.map((t) => {
         const active = current === t.to;
         return (
@@ -388,9 +387,6 @@ export function ContinuidadTabs({ current }: { current: string }) {
           </Link>
         );
       })}
-      <Link to="/continuidad/plan" className="flex h-11 items-center rounded-lg px-3 text-sm font-medium text-primary">
-        Plan imprimible
-      </Link>
     </nav>
   );
 }

@@ -1,0 +1,4 @@
+{
+  "nota": "Aviso por correo cuando cambia el nivel de alerta. Queda apagado hasta que Sebastián cargue los destinatarios y ponga activo en true.",
+  "correo": { "activo": false, "para": [] }
+}

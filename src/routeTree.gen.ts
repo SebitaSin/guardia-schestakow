@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ArchivoRouteImport } from './routes/archivo'
 import { Route as CambiosRouteImport } from './routes/cambios'
+import { Route as ComplementosRouteImport } from './routes/complementos'
 import { Route as ComunicacionesRouteImport } from './routes/comunicaciones'
 import { Route as ContinuidadRouteImport } from './routes/continuidad'
 import { Route as InternadosRouteImport } from './routes/internados'
@@ -22,6 +23,8 @@ import { Route as ServiciosRouteImport } from './routes/servicios'
 import { Route as ArchivoIndexRouteImport } from './routes/archivo.index'
 import { Route as ArchivoIdRouteImport } from './routes/archivo.$id'
 import { Route as ContinuidadIndexRouteImport } from './routes/continuidad.index'
+import { Route as ContinuidadAhoraRouteImport } from './routes/continuidad.ahora'
+import { Route as ContinuidadClimaRouteImport } from './routes/continuidad.clima'
 import { Route as ContinuidadConfigRouteImport } from './routes/continuidad.config'
 import { Route as ContinuidadHistorialRouteImport } from './routes/continuidad.historial'
 import { Route as ContinuidadMapaRouteImport } from './routes/continuidad.mapa'
@@ -51,6 +54,11 @@ const ArchivoRoute = ArchivoRouteImport.update({
 const CambiosRoute = CambiosRouteImport.update({
   id: '/cambios',
   path: '/cambios',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ComplementosRoute = ComplementosRouteImport.update({
+  id: '/complementos',
+  path: '/complementos',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ComunicacionesRoute = ComunicacionesRouteImport.update({
@@ -101,6 +109,16 @@ const ArchivoIdRoute = ArchivoIdRouteImport.update({
 const ContinuidadIndexRoute = ContinuidadIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => ContinuidadRoute,
+} as any)
+const ContinuidadAhoraRoute = ContinuidadAhoraRouteImport.update({
+  id: '/ahora',
+  path: '/ahora',
+  getParentRoute: () => ContinuidadRoute,
+} as any)
+const ContinuidadClimaRoute = ContinuidadClimaRouteImport.update({
+  id: '/clima',
+  path: '/clima',
   getParentRoute: () => ContinuidadRoute,
 } as any)
 const ContinuidadConfigRoute = ContinuidadConfigRouteImport.update({
@@ -183,6 +201,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/archivo': typeof ArchivoRouteWithChildren
   '/cambios': typeof CambiosRoute
+  '/complementos': typeof ComplementosRoute
   '/comunicaciones': typeof ComunicacionesRoute
   '/continuidad': typeof ContinuidadRouteWithChildren
   '/internados': typeof InternadosRouteWithChildren
@@ -191,6 +210,8 @@ export interface FileRoutesByFullPath {
   '/salud': typeof SaludRoute
   '/servicios': typeof ServiciosRouteWithChildren
   '/archivo/$id': typeof ArchivoIdRoute
+  '/continuidad/ahora': typeof ContinuidadAhoraRoute
+  '/continuidad/clima': typeof ContinuidadClimaRoute
   '/continuidad/config': typeof ContinuidadConfigRoute
   '/continuidad/historial': typeof ContinuidadHistorialRoute
   '/continuidad/mapa': typeof ContinuidadMapaRoute
@@ -212,11 +233,14 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/cambios': typeof CambiosRoute
+  '/complementos': typeof ComplementosRoute
   '/comunicaciones': typeof ComunicacionesRoute
   '/personal-mapa': typeof PersonalMapaRoute
   '/plantel': typeof PlantelRoute
   '/salud': typeof SaludRoute
   '/archivo/$id': typeof ArchivoIdRoute
+  '/continuidad/ahora': typeof ContinuidadAhoraRoute
+  '/continuidad/clima': typeof ContinuidadClimaRoute
   '/continuidad/config': typeof ContinuidadConfigRoute
   '/continuidad/historial': typeof ContinuidadHistorialRoute
   '/continuidad/mapa': typeof ContinuidadMapaRoute
@@ -240,6 +264,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/archivo': typeof ArchivoRouteWithChildren
   '/cambios': typeof CambiosRoute
+  '/complementos': typeof ComplementosRoute
   '/comunicaciones': typeof ComunicacionesRoute
   '/continuidad': typeof ContinuidadRouteWithChildren
   '/internados': typeof InternadosRouteWithChildren
@@ -248,6 +273,8 @@ export interface FileRoutesById {
   '/salud': typeof SaludRoute
   '/servicios': typeof ServiciosRouteWithChildren
   '/archivo/$id': typeof ArchivoIdRoute
+  '/continuidad/ahora': typeof ContinuidadAhoraRoute
+  '/continuidad/clima': typeof ContinuidadClimaRoute
   '/continuidad/config': typeof ContinuidadConfigRoute
   '/continuidad/historial': typeof ContinuidadHistorialRoute
   '/continuidad/mapa': typeof ContinuidadMapaRoute
@@ -272,6 +299,7 @@ export interface FileRouteTypes {
     | '/'
     | '/archivo'
     | '/cambios'
+    | '/complementos'
     | '/comunicaciones'
     | '/continuidad'
     | '/internados'
@@ -280,6 +308,8 @@ export interface FileRouteTypes {
     | '/salud'
     | '/servicios'
     | '/archivo/$id'
+    | '/continuidad/ahora'
+    | '/continuidad/clima'
     | '/continuidad/config'
     | '/continuidad/historial'
     | '/continuidad/mapa'
@@ -301,11 +331,14 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/cambios'
+    | '/complementos'
     | '/comunicaciones'
     | '/personal-mapa'
     | '/plantel'
     | '/salud'
     | '/archivo/$id'
+    | '/continuidad/ahora'
+    | '/continuidad/clima'
     | '/continuidad/config'
     | '/continuidad/historial'
     | '/continuidad/mapa'
@@ -328,6 +361,7 @@ export interface FileRouteTypes {
     | '/'
     | '/archivo'
     | '/cambios'
+    | '/complementos'
     | '/comunicaciones'
     | '/continuidad'
     | '/internados'
@@ -336,6 +370,8 @@ export interface FileRouteTypes {
     | '/salud'
     | '/servicios'
     | '/archivo/$id'
+    | '/continuidad/ahora'
+    | '/continuidad/clima'
     | '/continuidad/config'
     | '/continuidad/historial'
     | '/continuidad/mapa'
@@ -359,6 +395,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ArchivoRoute: typeof ArchivoRouteWithChildren
   CambiosRoute: typeof CambiosRoute
+  ComplementosRoute: typeof ComplementosRoute
   ComunicacionesRoute: typeof ComunicacionesRoute
   ContinuidadRoute: typeof ContinuidadRouteWithChildren
   InternadosRoute: typeof InternadosRouteWithChildren
@@ -390,6 +427,13 @@ declare module '@tanstack/react-router' {
       path: '/cambios'
       fullPath: '/cambios'
       preLoaderRoute: typeof CambiosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/complementos': {
+      id: '/complementos'
+      path: '/complementos'
+      fullPath: '/complementos'
+      preLoaderRoute: typeof ComplementosRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/comunicaciones': {
@@ -460,6 +504,20 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/continuidad/'
       preLoaderRoute: typeof ContinuidadIndexRouteImport
+      parentRoute: typeof ContinuidadRoute
+    }
+    '/continuidad/ahora': {
+      id: '/continuidad/ahora'
+      path: '/ahora'
+      fullPath: '/continuidad/ahora'
+      preLoaderRoute: typeof ContinuidadAhoraRouteImport
+      parentRoute: typeof ContinuidadRoute
+    }
+    '/continuidad/clima': {
+      id: '/continuidad/clima'
+      path: '/clima'
+      fullPath: '/continuidad/clima'
+      preLoaderRoute: typeof ContinuidadClimaRouteImport
       parentRoute: typeof ContinuidadRoute
     }
     '/continuidad/config': {
@@ -584,6 +642,8 @@ const ArchivoRouteWithChildren =
   ArchivoRoute._addFileChildren(ArchivoRouteChildren)
 
 interface ContinuidadRouteChildren {
+  ContinuidadAhoraRoute: typeof ContinuidadAhoraRoute
+  ContinuidadClimaRoute: typeof ContinuidadClimaRoute
   ContinuidadConfigRoute: typeof ContinuidadConfigRoute
   ContinuidadHistorialRoute: typeof ContinuidadHistorialRoute
   ContinuidadMapaRoute: typeof ContinuidadMapaRoute
@@ -594,6 +654,8 @@ interface ContinuidadRouteChildren {
 }
 
 const ContinuidadRouteChildren: ContinuidadRouteChildren = {
+  ContinuidadAhoraRoute: ContinuidadAhoraRoute,
+  ContinuidadClimaRoute: ContinuidadClimaRoute,
   ContinuidadConfigRoute: ContinuidadConfigRoute,
   ContinuidadHistorialRoute: ContinuidadHistorialRoute,
   ContinuidadMapaRoute: ContinuidadMapaRoute,
@@ -647,6 +709,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ArchivoRoute: ArchivoRouteWithChildren,
   CambiosRoute: CambiosRoute,
+  ComplementosRoute: ComplementosRoute,
   ComunicacionesRoute: ComunicacionesRoute,
   ContinuidadRoute: ContinuidadRouteWithChildren,
   InternadosRoute: InternadosRouteWithChildren,

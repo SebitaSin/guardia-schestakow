@@ -1,0 +1,23 @@
+{
+  "nota": "Cómo llama el laboratorio (Nextlab) a cada servicio y a qué servicio de la app corresponde. Revisar con Sebastián: un nombre mal asignado sólo hace que una cama quede en amarillo, no que se confirme mal.",
+  "dias": 3,
+  "equivalencias": {
+    "CLINICA MEDICA 1": ["clinica-1"],
+    "CLINICA MEDICA 2": ["clinica-2"],
+    "CLINICA MEDICA 3": ["clinica-3"],
+    "MATERNIDAD": ["obstetricia"],
+    "NEONATOLOGIA": ["neonatologia"],
+    "GINECOLOGIA": ["ginecologia"],
+    "UCCYQ": ["uccyq"],
+    "UNIDAD CORONARIA": ["uco"],
+    "PSIQUIATRIA": ["salud-mental"],
+    "CIRUGIA": ["cirugia"],
+    "UTI ADULTOS": ["terapia-intensiva"],
+    "UTI PEDIATRICA": ["tip"],
+    "TRAUMATOLOGIA": ["traumatologia"],
+    "UROLOGIA": ["urologia"],
+    "SIAPS": ["siiaps"],
+    "PEDIATRIA": ["pediatria-este", "pediatria-norte", "pediatria-adolescentes", "pediatria"]
+  },
+  "ingreso": ["GUARDIA"]
+}

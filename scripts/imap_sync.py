@@ -366,6 +366,12 @@ def main() -> int:
         stats["catalog"] = ingest_pending.run()
     except Exception as exc:
         record_error("catalog_ingest_failed", exc)
+    # Reclamo de planillas que faltan. Sólo envía si está habilitado en server/reclamos-config.json.
+    try:
+        import reclamos
+        stats["reclamos"] = reclamos.run()
+    except Exception as exc:
+        record_error("reclamos_failed", exc)
     stats.update({"at": now(), "account": ACCOUNT, "readonly": True})
     atomic_json(DATA_ROOT / "status.json", stats)
     print(json.dumps(stats, ensure_ascii=False))

@@ -1,0 +1,144 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
+import { alertLevel, colorOf, gradeOf, hydroAlerts, rainReading, riverReading, computeAlerts, createWeatherWatch, inside, parseCap, parseEnso, parseExtended, parseInpres, quakeAlerts } from "./weather-watch.mjs";
+
+test("los sismos del INPRES se leen con su hora, distancia y si fueron sentidos", () => {
+  const list = parseInpres(readFileSync(new URL("./fixtures/inpres-20261006.xml", import.meta.url), "utf8"));
+  assert.equal(list.length, 30);
+  assert.deepEqual([list[0].en, list[0].mg, list[0].prov, list[0].sentido, list[0].prof], ["2026-10-06T20:28:32Z", 3.8, "SAN JUAN", true, 117]);
+  assert.ok(list[0].km > 250 && list[0].km < 350, String(list[0].km));
+  const now = Date.parse("2026-10-06T21:00:00Z");
+  assert.deepEqual(quakeAlerts(list, now), []); // 3,8 a 300 km no es alerta
+  const near = [{ en: "2026-10-06T20:00:00Z", mg: 5.4, km: 80, prov: "MENDOZA", prof: 20 }, { en: "2026-10-06T19:00:00Z", mg: 4.2, km: 60, prov: "MENDOZA", prof: 10 }, { en: "2026-10-05T19:00:00Z", mg: 6.5, km: 50, prov: "MENDOZA", prof: 10 }];
+  assert.deepEqual(quakeAlerts(near, now).map((a) => a.nivel), ["naranja", "amarillo"]); // el de ayer ya no alerta
+});
+
+test("el pronóstico a 10 días usa ECMWF y dice cuánto coinciden los modelos", () => {
+  const daily = { daily: { time: ["2026-10-07", "2026-10-08", "2026-10-09", "2026-10-10"],
+    weather_code_ecmwf_ifs025: [61, 3, 63, 61], temperature_2m_max_ecmwf_ifs025: [18, 20, 12, 15], temperature_2m_min_ecmwf_ifs025: [11, 9, 9, 8],
+    precipitation_sum_ecmwf_ifs025: [10.7, 0.2, 36.8, 8], precipitation_probability_max_ecmwf_ifs025: [83, 12, 79, 60], wind_gusts_10m_max_ecmwf_ifs025: [36, 26, 34, 30], wind_direction_10m_dominant_ecmwf_ifs025: [167, 98, 184, 150],
+    precipitation_sum_gfs_seamless: [9, 0, 1.7, 2], temperature_2m_max_gfs_seamless: [19, 21, 17, 15], precipitation_sum_icon_seamless: [11.2, 0.1, null, null], temperature_2m_max_icon_seamless: [15, 19, null, null] } };
+  const out = parseExtended(daily, { hourly: { time: ["2026-10-07T00:00"], temperature_2m: [12], precipitation: [0.4], wind_gusts_10m: [20], weather_code: [61], precipitation_probability: [70] } });
+  assert.deepEqual(out.dias.map((day) => day.acuerdo), ["alto", "alto", "bajo", "medio"]);
+  assert.deepEqual([out.dias[2].lluvia, out.dias[2].otros.map((o) => o.nombre)], [36.8, ["GFS"]]);
+  assert.deepEqual(out.horas[0], { t: "2026-10-07T00:00", temp: 12, rain: 0.4, prob: 70, gust: 20, code: 61 });
+  assert.equal(parseExtended({}, {}), null);
+});
+
+const radarGif = readFileSync(new URL("./fixtures/radar-sur-20261006-2130.gif", import.meta.url));
+
+test("grado de alerta 1 a 9: gravedad × certeza; lo regional y lo menor no lo suben", () => {
+  const ok = (datos) => ({ ok: true, datos });
+  const NOW = Date.parse("2026-10-07T12:00:00-03:00");
+  const base = () => ({ oficial: ok({ alertas: [] }), pronostico: ok({ alertas: [] }), radar: ok({ vigente: true, alertas: [] }) });
+  assert.deepEqual([gradeOf(1, 3), gradeOf(2, 1), gradeOf(2, 3), gradeOf(3, 2), gradeOf(4, 3)], [3, 3, 5, 6, 9]);
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 9].map(colorOf), ["verde", "verde", "amarillo", "amarillo", "naranja", "naranja", "rojo", "rojo"]);
+  const calm = { ...base(), oficial: ok({ alertas: [{ alcance: "REGIONAL", nivel: "rojo", evento: "Nevadas" }] }) };
+  assert.deepEqual([alertLevel(calm, NOW).grado, alertLevel(calm, NOW).color, alertLevel(calm, NOW).nombre, alertLevel(calm, NOW).motivos], [1, "verde", "Sin riesgo", []]);
+  // Señal débil de tormenta para mañana: grado 2, no figura como alerta.
+  const weak = { ...base(), pronostico: ok({ alertas: [{ tipo: "tormenta", nivel: "amarillo", titulo: "Tormentas", desde: "2026-10-08T15:00" }] }) };
+  const weakLevel = alertLevel(weak, NOW);
+  assert.deepEqual([weakLevel.grado, weakLevel.color, weak.pronostico.datos.alertas.length, weak.pronostico.datos.menores.length], [2, "verde", 0, 1]);
+  // Granizo pronosticado: lejos en el tiempo 5; dentro de 6 horas 6.
+  const hail = (desde) => alertLevel({ ...base(), pronostico: ok({ alertas: [{ tipo: "granizo", nivel: "naranja", titulo: "Riesgo de granizo", desde }] }) }, NOW).grado;
+  assert.deepEqual([hail("2026-10-08T15:00"), hail("2026-10-07T15:00")], [5, 6]);
+  // Alerta naranja del SMN vigente: 6; si además el radar muestra la tormenta fuerte sobre la ciudad: 7.
+  const smn = { alcance: "LOCAL", nivel: "naranja", evento: "Tormentas", desde: "2026-10-07T09:00:00-03:00", hasta: "2026-10-07T21:00:00-03:00", certeza: "Likely" };
+  assert.equal(alertLevel({ ...base(), oficial: ok({ alertas: [{ ...smn }] }) }, NOW).grado, 6);
+  const both = alertLevel({ ...base(), oficial: ok({ alertas: [{ ...smn }] }), radar: ok({ vigente: true, alertas: [{ grado: 5, titulo: "Tormenta fuerte con posible granizo sobre San Rafael" }] }) }, NOW);
+  assert.deepEqual([both.grado, both.color, both.nombre, both.motivos[0].origen], [7, "rojo", "Emergencia", "SMN"]);
+  assert.equal(alertLevel({ ...base(), oficial: ok({ alertas: [{ ...smn, nivel: "amarillo", certeza: "Possible" }] }) }, NOW).grado, 3);
+  assert.equal(alertLevel({ ...base(), radar: { ok: false, datos: null } }, NOW).incompleto, true);
+});
+
+const cap = (polygon, extra = "") => `<alert><sent>2026-10-06T09:09:31-03:00</sent><info><event>Viento Zonda</event><severity>Severe</severity><onset>2026-10-06T15:00:00-03:00</onset><expires>2026-10-07T08:59:59-03:00</expires><description>R&#xE1;fagas</description><instruction>Cerr&#xE1; ventanas</instruction>${extra}<area><polygon>${polygon}</polygon></area></info></alert>`;
+const AROUND = "-34,-69 -34,-68 -35,-68 -35,-69 -34,-69";
+const NEAR = "-33.6,-69 -33.6,-68 -33.9,-68 -33.9,-69 -33.6,-69";
+const FAR = "-25,-60 -25,-59 -26,-59 -26,-60 -25,-60";
+
+test("un aviso CAP se clasifica por su relación con el hospital", () => {
+  assert.equal(inside({ lat: -34.6, lon: -68.3 }, [{ lat: -34, lon: -69 }, { lat: -34, lon: -68 }, { lat: -35, lon: -68 }, { lat: -35, lon: -69 }]), true);
+  const local = parseCap(cap(AROUND), "u");
+  assert.deepEqual([local.alcance, local.nivel, local.evento, local.descripcion, local.distancia_km], ["LOCAL", "naranja", "Viento Zonda", "Ráfagas", 0]);
+  assert.equal(parseCap(cap(NEAR), "u").alcance, "REGIONAL");
+  assert.equal(parseCap(cap(FAR), "u"), null);
+  assert.equal(parseCap("<alert></alert>", "u"), null);
+});
+
+test("las alertas calculadas salen de umbrales fijos y un día calmo no genera ninguna", () => {
+  const hour = (i, extra = {}) => ({ t: `2026-10-07T${String(i).padStart(2, "0")}:00`, temp: 20, rh: 50, rain: 0, prob: 10, gust: 20, dir: 180, cape: 50, li: 2, frz: 3500, code: 2, wind700: 20, dir700: 200, ...extra });
+  assert.deepEqual(computeAlerts(Array.from({ length: 24 }, (_, i) => hour(i))), []);
+  const zonda = computeAlerts(Array.from({ length: 24 }, (_, i) => hour(i, i >= 14 && i <= 18 ? { gust: 75, dir: 280, rh: 12, wind700: 80, dir700: 290 } : {})));
+  assert.deepEqual(zonda.map((a) => [a.tipo, a.nivel, a.desde.slice(11), a.hasta.slice(11)]), [["zonda", "naranja", "14:00", "18:00"], ["viento", "amarillo", "14:00", "18:00"]]);
+  const storm = computeAlerts(Array.from({ length: 24 }, (_, i) => hour(i, i >= 17 && i <= 19 ? { cape: 2100, li: -6, prob: 70, rain: 15 } : {})));
+  assert.deepEqual(storm.map((a) => a.tipo).sort(), ["granizo", "lluvia", "tormenta"]);
+  assert.equal(storm.find((a) => a.tipo === "lluvia").nivel, "naranja");
+});
+
+test("El Niño se lee de las dos tablas de NOAA, también con anomalías negativas pegadas", () => {
+  const enso = parseEnso("SEAS YR TOTAL ANOM\n  JJA 2026  29.09   1.80\n  JAS 2026  29.12   2.16\n", " Week  Nino1+2  Nino3  Nino34  Nino4\n 30SEP2026     26.1 5.3     29.0 4.0     29.9 3.2     29.9 1.2\n");
+  assert.deepEqual(enso, { oni: 2.16, trimestre: "JAS 2026", nombre: "El Niño muy fuerte", semana: "30SEP2026", nino34: 3.2 });
+  assert.equal(parseEnso("  DJF 2021  25.5  -1.05\n", " 06JAN2021     23.1-0.6     24.6-0.9     25.5-1.1     27.2-1.0\n").nino34, -1.1);
+  assert.equal(parseEnso("", "").oni, null);
+});
+
+test("si una fuente falla queda el último dato bueno marcado como desactualizado", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "sch-clima-"));
+  let smnDown = false, capLocal = true, hourly = [90, 20];
+  const fetchImpl = async (url) => {
+    const text = (body) => ({ ok: true, text: async () => body });
+    // El aviso CAP cambia de nombre cuando el SMN lo actualiza: así se vuelve a leer.
+    const first = capLocal ? "a.xml" : "a2.xml";
+    if (url.includes("AR.php")) return smnDown ? { ok: false, status: 503 } : text(`<a href="https://ssl.smn.gob.ar/feeds/CAP/xml_generados/${first}">x</a><a href="https://ssl.smn.gob.ar/feeds/CAP/xml_generados/b.xml">x</a>`);
+    if (url.endsWith("a2.xml")) return text(cap(FAR));
+    if (url.includes("a.xml")) return text(cap(capLocal ? AROUND : FAR));
+    if (url.endsWith("b.xml")) return text(cap(FAR));
+    if (url.includes("open-meteo")) return text(JSON.stringify({ current: { time: "2026-10-06T18:00", temperature_2m: 22 }, hourly: { time: ["2026-10-06T18:00", "2026-10-06T19:00"], wind_gusts_10m: hourly, precipitation: [0, 0] } }));
+    if (url.includes("radar")) return { ok: true, headers: new Map([["last-modified", "Tue, 06 Oct 2026 20:55:00 GMT"]]), arrayBuffer: async () => radarGif };
+    if (url.includes("inpres")) return text(readFileSync(new URL("./fixtures/inpres-20261006.xml", import.meta.url), "utf8"));
+    if (url.includes("oni")) return text("  JAS 2026  29.12   2.16\n");
+    return text(" 30SEP2026     26.1 5.3     29.0 4.0     29.9 3.2     29.9 1.2\n");
+  };
+  let clock = new Date("2026-10-06T21:00:00Z");
+  const changes = [];
+  const watch = createWeatherWatch({ dataDir, fetchImpl, env: {}, now: () => clock, onLevelChange: (change) => changes.push(change) });
+  const first = await watch.get();
+  assert.equal(first.oficial.datos.alertas.length, 1);
+  assert.equal(first.oficial.datos.alertas[0].alcance, "LOCAL");
+  assert.equal(first.pronostico.datos.alertas[0].nivel, "naranja");
+  assert.equal(first.enso.datos.nombre, "El Niño muy fuerte");
+  assert.equal(first.parte, null);
+  assert.deepEqual([first.radar.ok, first.radar.datos.vigente, first.radar.datos.lectura.celda.km, first.radar.datos.alertas.length], [true, true, 101, 0]);
+  assert.deepEqual([first.nivel.color, first.nivel.motivos[0].origen, first.nivel.incompleto], ["naranja", "SMN", false]);
+  smnDown = true; clock = new Date("2026-10-06T21:30:00Z");
+  const second = await watch.refresh();
+  assert.deepEqual([second.oficial.ok, second.oficial.en, second.oficial.datos.alertas.length], [false, "2026-10-06T21:00:00.000Z", 1]);
+  assert.equal(second.pronostico.ok, true);
+  assert.equal(first.sismos.datos.lista.length, 30);
+  // El aviso sale sólo cuando el nivel cambia: acá sigue en naranja, así que no hubo ninguno.
+  assert.deepEqual([changes.length, second.cambios.length], [0, 0]);
+  capLocal = false; smnDown = false; hourly = [20, 20]; clock = new Date("2026-10-06T22:00:00Z");
+  const third = await watch.refresh();
+  assert.deepEqual([third.nivel.color, changes.length, changes[0]?.de, changes[0]?.a, third.cambios.length], ["verde", 1, "naranja", "verde", 1]);
+  rmSync(dataDir, { recursive: true, force: true });
+});
+
+test("mediciones del INA: tendencia del río, lluvia caída y descarte de un pluviómetro que falla", () => {
+  const NOW = Date.parse("2026-10-07T07:00:00Z");
+  const at = (hoursAgo, valor) => ({ timestart: new Date(NOW - hoursAgo * 3_600_000).toISOString(), valor });
+  const calm = riverReading([at(50, 0.8), at(27, 0.83), at(9, 0.86), at(3, 0.88)], NOW);
+  assert.deepEqual([calm.m, calm.hace_h, calm.cambio_6h, calm.cambio_24h, calm.tendencia, calm.rapido, calm.min7, calm.max7], [0.88, 3, 0.02, 0.05, "sube", false, 0.8, 0.88]);
+  const rising = riverReading([at(30, 0.8), at(27, 0.85), at(9, 1.0), at(3, 1.4)], NOW);
+  assert.deepEqual([rising.cambio_6h, rising.rapido], [0.4, true]);
+  assert.equal(riverReading([], NOW), null);
+  const rain = rainReading([at(30, 5), at(8, 320), at(7, 576), at(6, 0), at(5, 0.75), at(4, 12), at(3, 10.5)], NOW);
+  assert.deepEqual([rain.mm_3h, rain.mm_24h, rain.descartados, rain.hace_h], [23.25, 23.25, 2, 3]);
+  const datos = { lluvia: [{ nombre: "El Tigre", km: 25, lectura: rain }, { nombre: "Lejos", km: 73, lectura: { ...rain, mm_3h: 60 } }, { nombre: "Viejo", km: 30, lectura: { ...rain, mm_3h: 60, hace_h: 9 } }], rios: [{ rio: "Diamante", nombre: "La Jaula", donde: "aguas arriba", arriba: true, lectura: rising }, { rio: "Diamante", nombre: "Monte Comán", donde: "aguas abajo", arriba: false, lectura: rising }] };
+  assert.deepEqual(hydroAlerts(datos).map((alert) => [alert.grado, alert.tipo]), [[4, "lluvia_medida"], [3, "rio"]]);
+  const level = alertLevel({ oficial: { ok: true, datos: { alertas: [] } }, pronostico: { ok: true, datos: { alertas: [] } }, radar: { ok: true, datos: { vigente: true, alertas: [] } }, hidro: { ok: true, datos: { alertas: hydroAlerts(datos) } } }, NOW);
+  assert.deepEqual([level.grado, level.motivos[0].origen], [4, "Medición INA"]);
+});

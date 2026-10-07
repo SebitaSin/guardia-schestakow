@@ -8,6 +8,7 @@ como "sin leer" con el motivo, para que la interfaz lo muestre.
 from __future__ import annotations
 
 import calendar
+import hashlib
 import json
 import os
 import re
@@ -57,7 +58,7 @@ def detect_department(text: str) -> str | None:
         (r"ENDOSCOP", "endoscopias"), (r"CAMILLERO|MOVILIDAD", "movilidad"), (r"BIOQUIM|LABORATORIO", "laboratorio"),
         (r"NEONAT", "neonatologia"), (r"CIRUGIA PEDIATR", "cirugia-pediatrica"), (r"PEDIATR", "pediatria"),
         (r"\bCIRUGIA\b|\bCIRUJANO", "cirugia"), (r"KINESIO", "kinesiologia"), (r"SALUD MENTAL", "salud-mental"),
-        (r"CLINICA MEDICA", "piso-clinica"),
+        (r"CLINICA MEDICA", "piso-clinica"), (r"RADIOLOG|DIAGNOSTICO POR IMAGEN", "diagnostico-imagenes"),
     ]
     for pattern, slug in rules:
         if re.search(pattern, f):
@@ -674,24 +675,29 @@ def read_attachment(path: Path, item: dict) -> dict:
                         tables.append(table)
                         titles.append(pdf_title)
                 if not tables:
-                    return {"reason": "pdf escaneado o con formato no reconocido"}
+                    return read_scanned_pdf(path, item)
         elif head[:2] == b"PK" and suffix in (".docx", ".bin", "."):
             titles, tables = read_docx(path)
             file_type = "docx"
         elif head[:2] == b"PK" and suffix == ".xlsx":
             titles, tables = read_xlsx(path)
             file_type = "xlsx"
+        elif head.startswith(b"\xd0\xcf\x11\xe0") and suffix == ".xls" and (mail_day(item) or date.today()) >= BACKLOG_BEFORE:
+            titles, tables = read_xls(path)
+            file_type = "xls"
         elif head.startswith(b"\xd0\xcf\x11\xe0") and suffix == ".doc" and (mail_day(item) or date.today()) >= BACKLOG_BEFORE:
             titles, tables = read_doc(path)
             file_type = "doc"
         else:
             kind = "foto" if head[:3] == b"\xff\xd8\xff" or head.startswith(b"\x89PNG") else "formato antiguo de Office" if head.startswith(b"\xd0\xcf\x11\xe0") else "formato"
+            if kind == "foto" and (mail_day(item) or date.today()) >= BACKLOG_BEFORE:
+                return read_photo(path, item)
             return {"reason": f"{kind}: todavía sin lector automático"}
     except (zipfile.BadZipFile, KeyError, ET.ParseError, struct.error, ValueError, IndexError):
         return {"reason": "archivo dañado o protegido"}
     except Exception as exc:
         if head.startswith(b"%PDF"):
-            return {"reason": "pdf escaneado o con formato no reconocido"}
+            return read_scanned_pdf(path, item)
         raise
 
     top_text = " ".join(" ".join(row) for table in tables for row in table[:4])
@@ -797,6 +803,104 @@ def read_attachment(path: Path, item: dict) -> dict:
     }}
 
 
+def read_xls(path: Path) -> tuple[list[str], list[list[list[str]]]]:
+    """Excel viejo (.xls). Misma salida que read_xlsx."""
+    vendor = str(Path(__file__).resolve().parent / "vendor")
+    if vendor not in sys.path:
+        sys.path.insert(0, vendor)
+    import xlrd
+    book = xlrd.open_workbook(str(path))
+    names, tables = [], []
+    for sheet in book.sheets():
+        rows = []
+        for r in range(sheet.nrows):
+            row = []
+            for c in range(sheet.ncols):
+                cell = sheet.cell(r, c)
+                text = ""
+                if cell.ctype == xlrd.XL_CELL_DATE:
+                    try:
+                        text = xlrd.xldate_as_datetime(cell.value, book.datemode).date().isoformat()
+                    except Exception:
+                        text = str(cell.value)
+                elif cell.ctype == xlrd.XL_CELL_NUMBER:
+                    text = str(int(cell.value)) if cell.value == int(cell.value) else str(cell.value)
+                elif cell.ctype not in (xlrd.XL_CELL_EMPTY, xlrd.XL_CELL_BLANK, xlrd.XL_CELL_ERROR):
+                    text = str(cell.value)
+                row.append(text.strip())
+            if any(row):
+                rows.append(row)
+        if rows:
+            names.append(sheet.name)
+            tables.append(rows)
+    return names, tables
+
+
+def scanned_pdf_images(path: Path, max_pages: int = 2) -> list[bytes]:
+    """Imagen más grande de cada una de las primeras páginas de un PDF escaneado (JPEG o PNG)."""
+    vendor = str(Path(__file__).resolve().parent / "vendor")
+    if vendor not in sys.path:
+        sys.path.insert(0, vendor)
+    from pypdf import PdfReader
+    found = []
+    for page in list(PdfReader(str(path)).pages)[:max_pages]:
+        best = b""
+        try:
+            for image in page.images:
+                data = image.data
+                if (data[:3] == b"\xff\xd8\xff" or data.startswith(b"\x89PNG")) and len(data) > len(best):
+                    best = data
+        except Exception:
+            continue
+        if len(best) > 20_000:
+            found.append(best)
+    return found
+
+
+def read_scanned_pdf(path: Path, item: dict) -> dict:
+    """PDF sin texto (escaneado): se leen sus páginas como fotos."""
+    reason = {"reason": "pdf escaneado o con formato no reconocido"}
+    if (mail_day(item) or date.today()) < BACKLOG_BEFORE:
+        return reason
+    try:
+        images = scanned_pdf_images(path)
+    except Exception:
+        return reason
+    last = reason
+    for image in images:
+        last = read_photo(path, item, image=image)
+        if "doc" in last:
+            return last
+    return last
+
+
+def read_photo(path: Path, item: dict, image: bytes | None = None) -> dict:
+    """Foto de una planilla: la transcribe la IA (una sola vez por imagen) y se publica sólo si pasa los controles."""
+    import photo_reader
+    digest = hashlib.sha256(image).hexdigest() if image is not None else item.get("sha256") or hashlib.sha256(path.read_bytes()).hexdigest()
+    result = photo_reader.transcribe(path, digest, image=image)
+    if "reason" in result:
+        return result
+    hint = " ".join([item.get("filename") or "", item.get("subject") or ""])
+    hint_month, hint_year = explicit_month(hint)
+    read = photo_reader.to_shifts(result["reading"], mail_day(item), hint_month, hint_year)
+    if "reason" in read:
+        return read
+    department = detect_department(read["service"]) or detect_department(hint) \
+        or next((d for d in (detect_department(label) for label in item.get("labels") or []) if d), None)
+    title = Path(item.get("filename") or "").stem.strip() or (item.get("subject") or "Cronograma")
+    return {"doc": {
+        "id": item["id"], "title": title[:160], "filename": item.get("filename") or "", "departments": [department] if department else [],
+        "kind": "cronograma", "month": read["month"], "year": read["year"], "fileType": "foto",
+        "fileUrl": None, "thumbUrl": None, "pageImages": [], "preview": "calendar",
+        "notes": ["Leída de una foto por IA: verificar contra la imagen."] + ([f"{read['unclear']} nombres dudosos."] if read["unclear"] else []),
+        "flags": ["foto"], "calendar": None, "table": None, "shifts": read["shifts"], "photoPeople": read["people"], "bytes": int(item.get("bytes") or 0),
+        "superseded": False,
+        "source": {"mailDate": (mail_day(item) or date(1970, 1, 1)).isoformat(), "layout": "foto", "parser": PARSER_VERSION,
+                   "sender": sender_address(item.get("from") or "")},
+    }}
+
+
 def sender_address(value: str) -> str:
     match = re.search(r"[\w.+-]+@[\w.-]+", value or "")
     return match.group(0).lower() if match else ""
@@ -823,7 +927,8 @@ def resolve_departments(documents: list[dict]) -> None:
         if sender:
             counts = by_sender.setdefault(sender, {})
             counts[doc["departments"][0]] = counts.get(doc["departments"][0], 0) + 1
-    for doc in known + [d for d in bundled if d.get("departments") and d.get("shifts")]:
+    # Las fotos no sirven de referencia para reconocer a otras planillas por sus nombres.
+    for doc in [d for d in known if "foto" not in d["flags"]] + [d for d in bundled if d.get("departments") and d.get("shifts")]:
         by_department.setdefault(doc["departments"][0], set()).update(name_tokens(doc))
     for doc in documents:
         if doc["departments"]:
@@ -840,6 +945,182 @@ def resolve_departments(documents: list[dict]) -> None:
         if scored and scored[0][0] >= 0.6 and (len(scored) == 1 or scored[0][0] - scored[1][0] >= 0.25):
             doc["departments"] = [scored[0][1]]
             doc["source"]["departmentBy"] = "personas"
+
+
+def resolve_unread(unread: list[dict], documents: list[dict], pending: list[dict]) -> None:
+    """Archivo que no se pudo leer y no nombra el servicio: se asigna por quien lo manda.
+
+    Primero el servicio del que ese remitente manda siempre; si no hay historia, lo que diga
+    su dirección o el asunto. Si nada alcanza, queda sin servicio: no se inventa.
+    """
+    item_of = {item.get("id"): item for item in pending}
+    by_sender: dict[str, dict[str, int]] = {}
+    def count(sender: str, slug: str) -> None:
+        if sender:
+            by_sender.setdefault(sender, {})[slug] = by_sender.setdefault(sender, {}).get(slug, 0) + 1
+    for doc in documents:
+        if doc["departments"]:
+            count(sender_address(doc["source"].get("sender") or ""), doc["departments"][0])
+    for entry in unread:
+        if entry["departments"]:
+            count(sender_address((item_of.get(entry["id"]) or {}).get("from") or ""), entry["departments"][0])
+    for entry in unread:
+        if entry["departments"]:
+            continue
+        item = item_of.get(entry["id"]) or {}
+        counts = by_sender.get(sender_address(item.get("from") or ""), {})
+        best = max(counts, key=counts.get) if counts else None
+        if best and counts[best] / sum(counts.values()) >= 0.8:
+            entry["departments"], entry["departmentBy"] = [best], "remitente"
+            continue
+        guess = detect_department(" ".join([item.get("subject") or "", item.get("from") or ""]))
+        if guess:
+            entry["departments"], entry["departmentBy"] = [guess], "dirección del remitente"
+
+
+PHOTO_MAX_UNCLEAR = 0.4  # después de comparar con planillas anteriores: más que esto no se publica
+NOT_A_NAME = {"DRA", "LIC", "TEC", "RES", "HS", "DEL", "LOS", "LAS", "GUARDIA", "PASIVA", "ACTIVA", "NOCHE", "TARDE", "MANANA", "REEMPLAZO", "REFUERZO", "LICENCIA", "FERIADO", "DOMINGO", "SABADO"}
+
+
+def _name_words(text: str) -> list[str]:
+    return [word for word in re.findall(r"[^\W\d_]{3,}", text or "") if fold(word) not in NOT_A_NAME]
+
+
+def photo_names_config() -> dict:
+    """Nombres confirmados por servicio y meses en que las fotos se publican tal como se leen."""
+    try:
+        return json.loads((APP_ROOT / "server" / "photo-names.json").read_text("utf-8"))
+    except Exception:
+        return {}
+
+
+def reference_names(slug: str, documents: list[dict], pending: list[dict]) -> dict[str, str]:
+    """Nombres ya conocidos del servicio: nómina, planillas anteriores leídas de archivo y quienes mandan sus correos."""
+    known: dict[str, str] = {}
+    def add(text: str) -> None:
+        for word in _name_words(text):
+            known.setdefault(fold(word), word)
+    try:
+        staff = json.loads((APP_ROOT / "src" / "data" / "staff.json").read_text("utf-8")).get("services", {})
+        for person in staff.get(slug) or []:
+            add(person.get("name") or person.get("surname") or "")
+    except Exception:
+        pass
+    try:
+        bundled = json.loads((APP_ROOT / "src" / "data" / "catalog.json").read_text("utf-8")).get("documents", [])
+    except Exception:
+        bundled = []
+    for doc in bundled + [d for d in documents if "foto" not in d.get("flags", [])]:
+        if (doc.get("departments") or [None])[0] == slug:
+            for shift in doc.get("shifts") or []:
+                add(shift.get("text", ""))
+    # Nombres que Sebastián confirmó a mano (server/photo-names.json).
+    for name in (photo_names_config().get("confirmed") or {}).get(slug) or []:
+        add(str(name))
+    # Quien manda las planillas del servicio suele figurar en ellas.
+    for item in pending:
+        if detect_department(" ".join([item.get("filename") or "", item.get("subject") or ""])) == slug:
+            add(re.sub(r"<.*", "", item.get("from") or ""))
+    return known
+
+
+def _closest(key: str, known: dict[str, str], cutoff: float) -> str | None:
+    """El nombre conocido al que se parece `key`, sólo si hay uno claramente mejor que el resto."""
+    import difflib
+    # Nombre cortado en la foto ("CENTE" por "CENTENO"): vale si un solo conocido empieza así.
+    if len(key) >= 4:
+        starts = [name for name in known if name.startswith(key) and name != key]
+        if len(starts) == 1:
+            return starts[0]
+    if len(key) <= 4:
+        # Nombres cortos ("ZIN" por "SIN"): misma cantidad de letras y una sola distinta.
+        near = [name for name in known if len(name) == len(key) and sum(a != b for a, b in zip(name, key)) == 1]
+        return near[0] if len(near) == 1 else None
+    ratio = lambda name: difflib.SequenceMatcher(None, key, name).ratio()
+    close = sorted(((ratio(name), name) for name in known if abs(len(name) - len(key)) <= 3), reverse=True)[:2]
+    if close and close[0][0] >= cutoff and (len(close) == 1 or close[0][0] - close[1][0] >= 0.08):
+        return close[0][1]
+    return None
+
+
+def correct_name(name: str, known: dict[str, str], cutoff: float) -> tuple[str, bool]:
+    """Devuelve el nombre con la grafía conocida y si quedó respaldado por un nombre conocido."""
+    words, backed, significant = name.split(), 0, 0
+    for index, word in enumerate(words):
+        bare = word.strip(".,")
+        if not re.fullmatch(r"[^\W\d_]{3,}", bare) or fold(bare) in NOT_A_NAME:
+            continue
+        significant += 1
+        key = fold(bare)
+        if key in known:
+            backed += 1
+            continue
+        match = _closest(key, known, cutoff)
+        if match:
+            shown = known[match]
+            shown = shown.upper() if bare.isupper() else shown[:1].upper() + shown[1:].lower() if shown.isupper() else shown
+            words[index] = word.replace(bare, shown)
+            backed += 1
+    return " ".join(words), bool(significant) and backed == significant
+
+
+def finalize_photos(documents: list[dict], unread: list[dict], pending: list[dict]) -> None:
+    """Compara cada nombre leído de una foto con los nombres conocidos del servicio y arma el texto definitivo."""
+    for doc in [d for d in documents if d.get("photoPeople") is not None]:
+        people = doc.pop("photoPeople")
+        slug = doc["departments"][0] if doc["departments"] else ""
+        known = reference_names(slug, documents, pending) if slug else {}
+        # Los nombres que la misma planilla repite sin dudas también sirven de referencia.
+        sure: dict[str, int] = {}
+        for rows in people.values():
+            for name, _, unclear in rows:
+                if not unclear:
+                    for word in _name_words(name):
+                        sure[word] = sure.get(word, 0) + 1
+        for word, times in sure.items():
+            if times >= 2:
+                known.setdefault(fold(word), word)
+        total = doubtful = fixed = 0
+        shifts = []
+        as_read = f"{doc['year']}-{doc['month']:02d}" in (photo_names_config().get("acceptAsRead") or [])
+        for day in sorted(people):
+            lines: list[str] = []
+            for name, hours, unclear in people[day]:
+                total += 1
+                better, backed = correct_name(name, known, 0.66 if unclear else 0.8)
+                if better != name:
+                    fixed += 1
+                if unclear and not backed and not as_read:
+                    doubtful += 1
+                    better = f"{better} (dudoso)"
+                line = f"{better} {hours}".strip()
+                if line not in lines:
+                    lines.append(line)
+            if lines:
+                shifts.append({"date": day, "text": " · ".join(lines)})
+        if total and doubtful / total > PHOTO_MAX_UNCLEAR:
+            documents.remove(doc)
+            unread.append({"id": doc["id"], "filename": doc["filename"], "mailDate": doc["source"]["mailDate"], "departments": doc["departments"],
+                           "reason": "foto: demasiados nombres dudosos, no se publica"})
+            continue
+        doc["shifts"] = shifts
+        doc["notes"] = ["Leída de una foto por IA: verificar contra la imagen."] \
+            + ([f"{fixed} nombres ajustados con los nombres conocidos del servicio."] if fixed else []) \
+            + ([f"{doubtful} nombres dudosos."] if doubtful else [])
+
+
+def check_photo_names(documents: list[dict], unread: list[dict]) -> None:
+    """Una foto leída cuyos nombres no se parecen a los de las planillas anteriores del servicio no se publica."""
+    known: dict[str, set[str]] = {}
+    for doc in documents:
+        if doc["departments"] and "foto" not in doc["flags"]:
+            known.setdefault(doc["departments"][0], set()).update(name_tokens(doc))
+    for doc in [d for d in documents if "foto" in d["flags"] and d["departments"]]:
+        names, mine = known.get(doc["departments"][0]), name_tokens(doc)
+        if names and mine and len(mine & names) / len(mine) < 0.3:
+            documents.remove(doc)
+            unread.append({"id": doc["id"], "filename": doc["filename"], "mailDate": doc["source"]["mailDate"], "departments": doc["departments"],
+                           "reason": "foto: los nombres no coinciden con las planillas anteriores del servicio"})
 
 
 def mark_superseded(documents: list[dict]) -> None:
@@ -918,13 +1199,31 @@ def run() -> dict:
         else:
             unread.append({**info, "reason": result["reason"]})
     resolve_departments(documents)
+    # Planilla leída que no nombra el servicio y sin historia de lectura (típico de una foto): se asigna por quien la manda.
+    orphans = [{"id": doc["id"], "departments": []} for doc in documents if not doc["departments"]]
+    resolve_unread(orphans + unread, documents, pending)
+    assigned = {entry["id"]: entry for entry in orphans if entry["departments"]}
+    for doc in documents:
+        if doc["id"] in assigned:
+            doc["departments"] = assigned[doc["id"]]["departments"]
+            doc["source"]["departmentBy"] = assigned[doc["id"]]["departmentBy"]
+    finalize_photos(documents, unread, pending)
+    check_photo_names(documents, unread)
     for doc in [d for d in documents if not d["departments"]]:
         documents.remove(doc)
         unread.append({"id": doc["id"], "filename": doc["filename"], "mailDate": doc["source"]["mailDate"], "departments": [],
                        "reason": "no se pudo determinar el servicio"})
     # Si el mismo cronograma llega más de una vez, vale el correo más nuevo.
     documents.sort(key=lambda d: d["source"]["mailDate"], reverse=True)
-    mark_superseded(documents)
+    typed = [doc for doc in documents if "foto" not in doc["flags"]]
+    photos = [doc for doc in documents if "foto" in doc["flags"]]
+    mark_superseded(typed)
+    mark_superseded(photos)
+    # Una foto nunca le gana a una planilla del mismo servicio y mes que llegó en Word, Excel o PDF.
+    solid = {(doc["departments"][0], doc["year"], doc["month"]) for doc in typed if doc["departments"] and not doc["superseded"]}
+    for doc in photos:
+        if doc["departments"] and (doc["departments"][0], doc["year"], doc["month"]) in solid:
+            doc["superseded"] = True
     limit = BACKLOG_BEFORE.isoformat()
     backlog = [entry for entry in unread if entry["mailDate"] < limit]
     unread = [entry for entry in unread if entry["mailDate"] >= limit]

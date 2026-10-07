@@ -10,13 +10,15 @@ import { aiReady, aiUsageStatus, analyzeBoardImage, verifyOpenAi } from "./ai.mj
 import { captureInbox, findCapture, recordHumanReview, saveManualCapture } from "./capture.mjs";
 import { applyCatalogSwap, catalogState } from "./catalog.mjs";
 import { confirmIdentity, identityMarks } from "./identity.mjs";
-import { deletePrivateLocation, readPrivateLocations, upsertPrivateLocation } from "./private-locations.mjs";
+import { deletePrivateLocation, readPrivateLocations, setSolidario, upsertPrivateLocation } from "./private-locations.mjs";
 import { deletePrivateContact, readPrivateContacts, upsertPrivateContact } from "./private-contacts.mjs";
 import { originalStaff, staffDirectory } from "./staff-directory.mjs";
 import { readStaffGroups, saveStaffGroup, deleteStaffGroup, saveGroupDraft } from "./staff-groups.mjs";
 import { geocodeWithGoogle } from "./maps.mjs";
+import { createAutogestion } from "./autogestion.mjs";
 import { communicationsInbox, reviewCommunication, saveManualCommunication } from "./communications.mjs";
 import { verifyBoardRows } from "./board-verification.mjs";
+import { confirmBed, readBoards } from "./boards.mjs";
 import { applyLearnedCorrections, correctionStatus, recordBoardCorrections } from "./corrections.mjs";
 
 const MIME = new Map([
@@ -43,7 +45,7 @@ function securityHeaders(res) {
   res.setHeader("referrer-policy", "strict-origin-when-cross-origin");
   res.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=()");
   res.setHeader("strict-transport-security", "max-age=31536000; includeSubDomains");
-  res.setHeader("content-security-policy", "default-src 'self'; img-src 'self' data: blob: https://maps.gstatic.com https://*.googleapis.com https://*.ggpht.com; style-src 'self' 'unsafe-inline'; script-src 'self' https://maps.googleapis.com; connect-src 'self' https://api.open-meteo.com https://maps.googleapis.com https://routes.googleapis.com https://maps.gstatic.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+  res.setHeader("content-security-policy", "default-src 'self'; img-src 'self' data: blob: https://gibs.earthdata.nasa.gov https://www2.contingencias.mendoza.gov.ar https://maps.gstatic.com https://*.googleapis.com https://*.ggpht.com; style-src 'self' 'unsafe-inline'; script-src 'self' https://maps.googleapis.com; connect-src 'self' https://api.open-meteo.com https://maps.googleapis.com https://routes.googleapis.com https://maps.gstatic.com; frame-src https://embed.waze.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
 }
 
 async function readBody(req, maxBytes = 16_384) {
@@ -120,8 +122,9 @@ function findMailAttachment(dataDir, id) {
   return { path, filename };
 }
 
-export function createHospitalServer({ distDir, dataDir, catalogFile = null, internacionFile = null, authConfig, waConfig, ai = { enabled: false }, maps = { browserKey: "", serverKey: "" }, mailRunner = null, fetchImpl = fetch }) {
+export function createHospitalServer({ distDir, dataDir, catalogFile = null, internacionFile = null, authConfig, waConfig, ai = { enabled: false }, maps = { browserKey: "", serverKey: "" }, mailRunner = null, photoIntake = null, fetchImpl = fetch , weatherWatch = null}) {
   const failures = new Map();
+  const autogestion = createAutogestion({ dataDir, secret: authConfig.secret, maps, fetchImpl });
   return createServer(async (req, res) => {
     securityHeaders(res);
     const origin = `http://${req.headers.host ?? "127.0.0.1"}`;
@@ -144,6 +147,14 @@ export function createHospitalServer({ distDir, dataDir, catalogFile = null, int
           return send(res, result.status, result.body);
         }
         return send(res, 405, "method");
+      }
+
+      // Autogestión del personal: página pública, sin usuario. Las reglas de qué muestra y qué guarda están en autogestion.mjs.
+      if (autogestion.isPublicPath(url.pathname)) {
+        // Con el enlace por túnel, el pasamanos local (scripts/enlace-personal.mjs) informa la dirección real de quien responde.
+        const local = /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(req.socket.remoteAddress ?? "");
+        const sender = local ? String(req.headers["x-enlace-ip"] ?? "").slice(0, 60) : "";
+        return await autogestion.handlePublic(req, res, url, sender || ip, { send, json, readBody });
       }
 
       if (url.pathname === "/login" && req.method === "GET") return send(res, 200, loginPage(), "text/html; charset=utf-8");
@@ -234,6 +245,36 @@ export function createHospitalServer({ distDir, dataDir, catalogFile = null, int
         if (contact) upsertPrivateContact(dataDir, authConfig.secret, { staffId: contact.staffId, address: body.address, transportMode: location.transportMode }, user.id);
         appendAudit(dataDir, { actor: user.id, role: user.role, action: "upsert_private_staff_location", kind: "human_decision", staffId: location.staffId, transportMode: location.transportMode });
         return json(res, 200, { location });
+      }
+      if (url.pathname === "/api/continuidad/solidario" && req.method === "POST") {
+        // Disponibilidad para el traslado solidario en catástrofe (vehículo seguro, dispuesto a llevar, necesita traslado).
+        if (!hasRole(user, ["DIRECTION", "ADMIN"])) return json(res, 403, { error: "forbidden" });
+        const body = JSON.parse((await readBody(req)).toString("utf8"));
+        try {
+          const location = setSolidario(dataDir, authConfig.secret, body, user.id);
+          appendAudit(dataDir, { actor: user.id, role: user.role, action: "traslado_solidario_declarado", kind: "human_decision", staffId: location.staffId, dispuesto: location.solidario.dispuesto, lugares: location.solidario.lugares, necesitaTraslado: location.solidario.necesitaTraslado });
+          return json(res, 200, { location });
+        } catch (error) {
+          return json(res, error?.message === "location_not_found" ? 404 : 400, { error: String(error?.message ?? "invalid") });
+        }
+      }
+      if (url.pathname === "/api/autogestion/estado" && req.method === "GET") {
+        if (!hasRole(user, ["DIRECTION", "ADMIN"])) return json(res, 403, { error: "forbidden" });
+        let enlacePublico = null;
+        try { enlacePublico = readFileSync(join(dataDir, "enlace-personal.txt"), "utf8").trim() || null; } catch { /* todavía no se abrió el enlace por túnel */ }
+        return json(res, 200, { habilitado: autogestion.enabled, enlacePublico, ...autogestion.estado() });
+      }
+      if (url.pathname === "/api/autogestion/resolver" && req.method === "POST") {
+        if (!hasRole(user, ["DIRECTION", "ADMIN"])) return json(res, 403, { error: "forbidden" });
+        const body = JSON.parse((await readBody(req)).toString("utf8"));
+        try {
+          const result = await autogestion.resolver(body, user.id);
+          appendAudit(dataDir, { actor: user.id, role: user.role, action: `autogestion_${result.accion}`, kind: "human_decision", tipo: result.tipo, staffId: result.staffId });
+          return json(res, 200, { ok: true, ...autogestion.estado() });
+        } catch (error) {
+          if (["pendiente", "accion"].includes(error?.message)) return json(res, error.message === "pendiente" ? 404 : 400, { error: error.message });
+          throw error;
+        }
       }
       if (url.pathname === "/api/continuidad/private-locations" && req.method === "DELETE") {
         if (!hasRole(user, ["DIRECTION", "ADMIN"])) return json(res, 403, { error: "forbidden" });
@@ -363,7 +404,7 @@ export function createHospitalServer({ distDir, dataDir, catalogFile = null, int
 
       if (url.pathname === "/api/capture/inbox" && req.method === "GET") {
         if (!hasRole(user, ["COORDINATOR", "DIRECTION", "ADMIN"])) return json(res, 403, { error: "forbidden" });
-        return json(res, 200, { inbox: captureInbox(dataDir) });
+        return json(res, 200, { inbox: captureInbox(dataDir), intake: photoIntake?.status() ?? null });
       }
       if (url.pathname.startsWith("/api/capture/image/") && req.method === "GET") {
         if (!hasRole(user, ["COORDINATOR", "DIRECTION", "ADMIN"])) return json(res, 403, { error: "forbidden" });
@@ -394,6 +435,20 @@ export function createHospitalServer({ distDir, dataDir, catalogFile = null, int
           : { recorded: 0 };
         appendAudit(dataDir, { actor: user.id, role: user.role, action: review.decision === "CONFIRMADA" ? "confirm_transcription" : "discard_transcription", kind: "human_decision", sourceHash: capture.hash, rowCount: review.rows.length, correctionsLearned: learning.recorded });
         return json(res, 200, review);
+      }
+
+      if (url.pathname === "/api/boards" && req.method === "GET") {
+        if (user.role === "DRIVER") return json(res, 403, { error: "forbidden" });
+        return json(res, 200, readBoards(dataDir));
+      }
+      if (url.pathname === "/api/boards/confirm" && req.method === "POST") {
+        if (!hasRole(user, ["COORDINATOR", "DIRECTION", "ADMIN"])) return json(res, 403, { error: "forbidden" });
+        const body = JSON.parse((await readBody(req)).toString("utf8"));
+        let bed;
+        try { bed = confirmBed({ dataDir, slug: body.slug, cama: body.cama, values: body.values && typeof body.values === "object" ? body.values : {}, actor: user.id }); }
+        catch { return json(res, 404, { error: "bed_not_found" }); }
+        appendAudit(dataDir, { actor: user.id, role: user.role, action: "confirm_board_bed", kind: "human_decision", service: String(body.slug), bed: String(body.cama) });
+        return json(res, 200, { bed, ...readBoards(dataDir) });
       }
 
       if (url.pathname === "/api/ai/status" && req.method === "GET") {
@@ -430,7 +485,39 @@ export function createHospitalServer({ distDir, dataDir, catalogFile = null, int
         // Cronogramas leídos automáticamente del correo (scripts/ingest_pending.py).
         const live = readJson(join(dataDir, "catalog", "live.json"), { generatedAt: null, documents: [] });
         const mail = readJson(join(dataDir, "mail", "status.json"), { status: "unknown", at: null });
-        return json(res, 200, { generatedAt: live.generatedAt ?? null, documents: Array.isArray(live.documents) ? live.documents : [], unread: (Array.isArray(live.unread) ? live.unread : []).map((item) => ({ id: String(item?.id ?? ""), filename: String(item?.filename ?? ""), mailDate: String(item?.mailDate ?? ""), departments: Array.isArray(item?.departments) ? item.departments : [] })), mail: { status: mail.status ?? "unknown", at: mail.at ?? null }, running: Boolean(mailRunner?.running) });
+        const claims = readJson(join(dataDir, "mail", "reclamos.json"), {});
+        const manualDuties = readJson(join(dataDir, "guardias", "manual.json"), {});
+        return json(res, 200, { manual: manualDuties && typeof manualDuties === "object" ? manualDuties : {}, reclamos: { enabled: claims?.enabled === true, month: claims?.month ?? null, services: claims?.services && typeof claims.services === "object" ? claims.services : {} }, generatedAt: live.generatedAt ?? null, documents: Array.isArray(live.documents) ? live.documents : [], unread: (Array.isArray(live.unread) ? live.unread : []).map((item) => ({ id: String(item?.id ?? ""), filename: String(item?.filename ?? ""), mailDate: String(item?.mailDate ?? ""), departments: Array.isArray(item?.departments) ? item.departments : [] })), mail: { status: mail.status ?? "unknown", at: mail.at ?? null }, running: Boolean(mailRunner?.running) });
+      }
+      if (url.pathname === "/api/clima/nivel" && req.method === "GET") {
+        // Sólo el nivel de alerta: lo consulta la barra que se ve en todas las pantallas.
+        if (!weatherWatch) return json(res, 503, { error: "weather_not_available" });
+        const state = await weatherWatch.get();
+        return json(res, 200, { en: state?.en ?? null, nivel: state?.nivel ?? null });
+      }
+      if (url.pathname === "/api/clima" && req.method === "GET") {
+        // Alertas oficiales, pronóstico, alertas calculadas y El Niño, ya reunidos por el servidor.
+        if (!weatherWatch) return json(res, 503, { error: "weather_not_available" });
+        return json(res, 200, await weatherWatch.get());
+      }
+      if (url.pathname === "/api/guardias/manual" && req.method === "POST") {
+        // Corrección a mano de quién está de guardia un día en un servicio. Texto vacío = volver a la planilla.
+        if (!hasRole(user, ["COORDINATOR", "DIRECTION", "ADMIN"])) return json(res, 403, { error: "forbidden" });
+        const body = JSON.parse((await readBody(req, 16 * 1024)).toString("utf8"));
+        const slug = String(body?.slug ?? ""), day = String(body?.date ?? "");
+        const text = String(body?.text ?? "").replace(/[\u0000-\u001f]+/g, " ").trim().slice(0, 2000);
+        if (!/^[a-z0-9-]{2,40}$/.test(slug) || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return json(res, 400, { error: "invalid_input" });
+        const manualPath = join(dataDir, "guardias", "manual.json");
+        const all = readJson(manualPath, {});
+        const key = `${day}|${slug}`;
+        const before = all[key]?.text ?? null;
+        if (text) all[key] = { text, by: user.id, at: new Date().toISOString() }; else delete all[key];
+        // Se conservan los últimos 60 días.
+        const limit = new Date(Date.now() - 60 * 86_400_000).toISOString().slice(0, 10);
+        for (const item of Object.keys(all)) if (item.slice(0, 10) < limit) delete all[item];
+        writeJsonAtomic(manualPath, all);
+        appendAudit(dataDir, { actor: user.id, role: user.role, action: text ? "guardia_editada" : "guardia_edicion_quitada", kind: "human_decision", entity: key, before, after: text || null });
+        return json(res, 200, { key, saved: Boolean(text) });
       }
       if (url.pathname === "/api/catalog/refresh" && req.method === "POST") {
         // Botón "Actualizar": cualquier usuario autenticado puede pedir que se revise el correo.
@@ -470,6 +557,27 @@ export function createHospitalServer({ distDir, dataDir, catalogFile = null, int
         const encodedName = encodeURIComponent(attachment.filename).replace(/['()]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
         appendAudit(dataDir, { actor: user.id, role: user.role, action: "download_mail_attachment", kind: "data_access", entity: id });
         return send(res, 200, readFileSync(attachment.path), "application/octet-stream", { "content-disposition": `attachment; filename*=UTF-8''${encodedName}` });
+      }
+      if (url.pathname === "/api/reclamos/pause" && req.method === "POST") {
+        // Cancela (o reanuda) el reclamo automático de un servicio para el mes en curso.
+        if (!hasRole(user, ["COORDINATOR", "DIRECTION", "ADMIN"])) return json(res, 403, { error: "forbidden" });
+        const body = JSON.parse((await readBody(req)).toString("utf8"));
+        const slug = String(body?.slug ?? "");
+        const statePath = join(dataDir, "mail", "reclamos.json");
+        const claims = readJson(statePath, {});
+        if (!/^[a-z0-9-]{2,40}$/.test(slug) || !claims?.month || !claims?.services?.[slug]) return json(res, 400, { error: "unknown_service" });
+        const controlPath = join(dataDir, "mail", "reclamos-control.json");
+        const control = readJson(controlPath, {});
+        const paused = { ...(control?.paused && typeof control.paused === "object" ? control.paused : {}) };
+        if (body?.paused === false) delete paused[slug]; else paused[slug] = claims.month;
+        writeJsonAtomic(controlPath, { paused });
+        const current = claims.services[slug].status;
+        if (current === "pendiente" || current === "cancelado") {
+          claims.services[slug] = { ...claims.services[slug], status: paused[slug] ? "cancelado" : "pendiente", due: false };
+          writeJsonAtomic(statePath, claims);
+        }
+        appendAudit(dataDir, { actor: user.id, role: user.role, action: paused[slug] ? "reclamo_cancelado" : "reclamo_reanudado", kind: "human_decision", entity: slug });
+        return json(res, 200, { slug, paused: Boolean(paused[slug]) });
       }
       if (url.pathname === "/api/mail/sync" && req.method === "POST") {
         if (!hasRole(user, ["COORDINATOR", "DIRECTION", "ADMIN"])) return json(res, 403, { error: "forbidden" });

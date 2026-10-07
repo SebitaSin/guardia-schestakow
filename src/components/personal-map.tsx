@@ -6,6 +6,7 @@ import {
   computeRoute,
   removePrivateLocation,
   savePrivateLocation,
+  saveSolidario,
   type PrivateStaffLocation,
   type TransportMode,
 } from "@/lib/private-locations";
@@ -18,6 +19,9 @@ import { validMapPoint } from "@/lib/staff-coverage";
 import { locatePendingStaff } from "@/lib/staff-map-batch";
 import { fuelEstimate } from "@/lib/map-route-metrics";
 import { storageGet, storageSet } from "@/lib/safe-storage";
+import { Car } from "lucide-react";
+import { TrasladoSolidario } from "@/components/traslado-solidario";
+import { AutogestionPanel } from "@/components/autogestion-panel";
 
 declare global {
   interface Window { google?: any }
@@ -121,6 +125,8 @@ export function PersonalMapPage() {
   const [staffId, setStaffId] = useState("");
   const [address, setAddress] = useState("");
   const [transportMode, setTransportMode] = useState<TransportMode>("UNKNOWN");
+  // Traslado solidario: lo que la persona declara. "ride" = necesita que la pasen a buscar.
+  const [solidario, setSolidario] = useState({ safe: false, willing: false, seats: 1, ride: false });
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [routeTarget, setRouteTarget] = useState<PrivateStaffLocation | null>(null);
@@ -213,6 +219,7 @@ export function PersonalMapPage() {
     setStaffId(id);
     setAddress(point?.address ?? person?.address ?? "");
     setTransportMode(point?.transportMode ?? (person?.transportMode as TransportMode) ?? "UNKNOWN");
+    setSolidario({ safe: Boolean(point?.solidario?.vehiculoSeguro), willing: Boolean(point?.solidario?.dispuesto), seats: point?.solidario?.lugares || 1, ride: Boolean(point?.solidario?.necesitaTraslado) });
     setNotice("");
     setRequestedOrigin("");
     setRouteTarget(point);
@@ -335,6 +342,8 @@ export function PersonalMapPage() {
     if (!point) { setBusy(false); setNotice("No se encontró esa dirección exacta. Escribí calle, número y localidad."); return; }
     try {
       const saved = await savePrivateLocation({ staffId, address: point.address, lat: point.lat, lng: point.lng, transportMode });
+      // Sólo se guarda la disponibilidad si ya había una o si se marcó algo: no se crea un "no" que nadie declaró.
+      if (pointById.get(staffId)?.solidario || solidario.safe || solidario.ride) await saveSolidario({ staffId, transportMode, vehiculoSeguro: solidario.safe, dispuesto: solidario.willing, lugares: solidario.seats, necesitaTraslado: solidario.ride });
       await refresh();
       if (!mounted.current) return;
       setAddress(saved.location.address);
@@ -366,6 +375,7 @@ export function PersonalMapPage() {
         <button type="button" aria-expanded={open} onClick={() => selectPerson(point?.staffId ?? person.staffId, point, person)} className={`flex min-h-11 w-full items-center gap-2 px-2 text-left text-sm ${open ? "bg-subtle font-medium" : ""}`}>
           <span aria-hidden="true" style={{ color: point ? colorFor(point.transportMode) : "transparent" }}>●</span>
           <span className="flex-1">{name}</span>
+          {point?.solidario?.dispuesto ? <Car className="size-4 shrink-0 text-primary" aria-label="Dispuesto a llevar compañeros en catástrofe" /> : null}
           {showAreas ? <span className="text-right text-xs text-muted">{item.areas.join(" · ")}</span> : null}
         </button>
         {open ? (
@@ -376,6 +386,14 @@ export function PersonalMapPage() {
             </select>
             <button type="button" disabled={busy || !configured || address.trim().length < 5} onClick={() => void save()} className="h-11 rounded-lg bg-primary px-4 text-sm font-medium text-primary-fg disabled:opacity-40">{busy ? "Guardando…" : "Guardar"}</button>
             {point ? <button type="button" disabled={busy} onClick={() => void remove()} className="h-11 rounded-lg border border-border px-3 text-sm disabled:opacity-40">Quitar del mapa</button> : null}
+            <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm md:col-span-4">
+              <legend className="px-1 text-xs font-semibold text-muted">En caso de catástrofe</legend>
+              <label className="flex min-h-9 items-center gap-2"><input type="checkbox" className="size-4" checked={solidario.safe} onChange={(event) => setSolidario({ ...solidario, safe: event.target.checked, willing: event.target.checked ? solidario.willing : false, ride: event.target.checked ? false : solidario.ride })} />Tiene vehículo seguro</label>
+              <label className={`flex min-h-9 items-center gap-2 ${solidario.safe ? "" : "opacity-40"}`}><input type="checkbox" className="size-4" disabled={!solidario.safe} checked={solidario.willing} onChange={(event) => setSolidario({ ...solidario, willing: event.target.checked })} /><Car className="size-4 text-primary" aria-hidden="true" />Acepta pasar a buscar compañeros</label>
+              {solidario.willing ? <label className="flex min-h-9 items-center gap-2">Lugares<select className="h-9 rounded-md border border-border bg-surface px-2" value={solidario.seats} onChange={(event) => setSolidario({ ...solidario, seats: Number(event.target.value) })}>{[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}</select></label> : null}
+              <label className={`flex min-h-9 items-center gap-2 ${solidario.safe ? "opacity-40" : ""}`}><input type="checkbox" className="size-4" disabled={solidario.safe} checked={solidario.ride} onChange={(event) => setSolidario({ ...solidario, ride: event.target.checked })} />Necesita que la pasen a buscar</label>
+              {point?.solidario ? <span className="text-xs text-muted">Cargado por {point.solidario.por} el {new Date(point.solidario.en).toLocaleDateString("es-AR")}</span> : null}
+            </fieldset>
             {notice ? <p role="status" className="text-sm md:col-span-4">{notice}</p> : null}
           </div>
         ) : null}
@@ -388,6 +406,8 @@ export function PersonalMapPage() {
 
   return (
     <div className="space-y-3">
+      {loaded ? <AutogestionPanel onChange={() => void refresh()} /> : null}
+      {loaded ? <TrasladoSolidario people={people} pointOf={pointOf} hospital={HOSPITAL} /> : null}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
         <span className="font-medium">{loaded ? `${locations.length} en el mapa` : "Cargando…"}{updating ? " · actualizando…" : ""}</span>
         <span className="text-blue-600">● Auto</span>

@@ -1,7 +1,7 @@
 import raw from "./catalog.json";
 import { DEPARTMENT_BY_SLUG, DEPARTMENTS, type Department } from "./departments";
 import { loadOverrides } from "@/lib/overrides";
-import { liveDocuments } from "@/lib/live-catalog";
+import { liveDocuments, liveManual, type ManualDuty } from "@/lib/live-catalog";
 
 export type DocKind = "cronograma" | "parte" | "pasiva" | "modificacion";
 export type PreviewKind = "calendar" | "table" | "pages" | "image" | "text" | "file";
@@ -201,6 +201,8 @@ export type DutyHit = {
   dept: Department;
   doc: GuardiaDoc;
   text: string;
+  /** Presente si la guardia de ese día fue corregida a mano. */
+  manual?: ManualDuty;
 };
 
 export function dutiesOn(iso: string): DutyHit[] {
@@ -210,6 +212,13 @@ export function dutiesOn(iso: string): DutyHit[] {
       .filter((d) => d.shifts.some((s) => s.date === iso))
       .sort(rankDocs);
     const doc = docs[0];
+    // Lo corregido a mano en pantalla manda sobre la planilla de ese día.
+    const manual = liveManual()[`${iso}|${dept.slug}`];
+    const reference = doc ?? docsForDept(dept.slug)[0];
+    if (manual?.text.trim() && reference) {
+      hits.push({ dept, doc: reference, text: manual.text, manual });
+      continue;
+    }
     if (!doc) continue;
     // Un servicio puede mandar más de un plantel (médicos, licenciados, pasivas): se muestran todos.
     const fromMail = docs.filter((d) => d.source);

@@ -1,0 +1,11 @@
+{
+  "enabled": false,
+  "exclude": [],
+  "hours": [
+    8,
+    16
+  ],
+  "leadDays": 3,
+  "maxRecipients": 2,
+  "activeWithinDays": 120
+}

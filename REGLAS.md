@@ -1,12 +1,18 @@
-# Reglas de trabajo (ChatGPT, Claude y cualquier otra herramienta)
+# Reglas de trabajo
 
 Leer antes de tocar nada: `OBJETIVO.md` y `ESTADO.md`.
+
+## Una sola herramienta
+
+- **Esta carpeta la modifica una sola herramienta: Claude.** Decisión de Sebastián del 5/10/2026: trabajar con dos a la vez generaba versiones cruzadas e instrucciones contradictorias.
+- ChatGPT u otra herramienta puede usarse para consultar o comparar ideas, pero no edita archivos de esta carpeta, no hace `git` acá y sus propuestas no cambian `OBJETIVO.md`.
+- Si alguna vez se suma otra herramienta, primero se escribe acá qué archivos toca cada una.
 
 ## Una sola versión
 
 - **La fuente es la carpeta de la PC del hospital** (`schestakow-libre`). Ahí corre la app.
-- **Este repositorio es su espejo.** Se actualiza desde esa carpeta. No se edita código directo en GitHub ni se suben zips: así nacieron las versiones cruzadas.
-- Un cambio existe cuando está en la carpeta, probado, y reflejado acá con `ESTADO.md` actualizado.
+- **El repositorio de GitHub es su espejo.** Se actualiza desde esa carpeta. No se edita código directo en GitHub ni se suben zips.
+- Un cambio existe cuando está en la carpeta, probado, y anotado en el registro de `ESTADO.md`.
 
 ## Qué nunca se sube
 
@@ -16,22 +22,22 @@ Por eso el repositorio tiene el código completo pero no arranca solo: los datos
 
 ## Cómo se hace un cambio
 
-1. Decir a qué punto de `OBJETIVO.md` responde. Si no responde a ninguno, no se hace.
-2. Leer `ESTADO.md` para no pisar el trabajo del otro.
+1. Decir a qué punto de `OBJETIVO.md` responde y verificar que el punto del que depende ya anda. Si no, no se hace.
+2. Leer `ESTADO.md` y su registro de cambios.
 3. Guardar copia del archivo original en `_backups/<fecha>-<tema>/` antes de modificarlo.
-4. Cambiar lo mínimo necesario.
+4. Cambiar lo mínimo necesario. Nunca reescribir entero `server/app.mjs`, `server/start.mjs`, `scripts/start-secure.ps1` ni `package.json`.
 5. Probar. Las pruebas internas pueden usar datos ficticios; lo que se le muestra al usuario, nunca.
-6. Actualizar `ESTADO.md` separando: **comprobado en la PC real**, **probado fuera de la PC**, **sin probar**.
+6. Actualizar `ESTADO.md` separando **comprobado en la PC real**, **probado fuera de la PC**, **sin probar**, y agregar una línea al registro: fecha, archivos tocados, qué se probó, si hace falta reiniciar.
 7. Si el cambio toca el servidor o las pantallas, hace falta reiniciar (`REINICIAR-SERVIDOR.cmd`); decirlo.
+8. No se borra nada sin pedirlo. Lo que sobra se anota y lo decide Sebastián.
 
-## Dos herramientas a la vez (Claude y ChatGPT/Codex)
+## Decisiones que son sólo de Sebastián
 
-- **Reparto fijo.** Claude: correo, lectura de planillas, pantalla de guardias, Personal, publicación en internet. ChatGPT/Codex: entrada de fotos de pizarras, su lectura, cruce con laboratorio y planillas de pacientes por servicio. Para tocar algo del otro, primero se anota en `ESTADO.md`.
-- **Antes de empezar:** leer el "Registro de cambios" al final de `ESTADO.md` y trabajar sobre los archivos tal como están en la carpeta de la PC.
-- **Al terminar:** agregar una línea al registro con fecha, quién, archivos tocados, qué se probó y si hace falta reiniciar.
-- **Archivos compartidos** (`server/app.mjs`, `server/start.mjs`, `scripts/start-secure.ps1`, `package.json`): cambios chicos y puntuales, nunca reescribir el archivo entero.
-- **GitHub lo actualiza uno solo:** Claude copia la carpeta de la PC al repositorio después de cada cambio registrado. Codex no hace `git push` ni `git reset` en la carpeta de la PC.
-- Nadie borra ni revierte trabajo del otro. Si algo del otro parece mal, se anota en `ESTADO.md` y se le avisa a Sebastián.
+- Enviar imágenes o datos de pacientes a un servicio externo.
+- Activar cualquier consumo pago.
+- Eliminar la cuenta de WhatsApp del 260 405 6998 o registrar el número en Meta.
+- Proveedor, dominio y publicación con datos reales.
+- Enviar un mensaje real a personal del hospital.
 
 ## Comandos de verificación
 
@@ -44,4 +50,4 @@ npm run build
 
 ## Honestidad
 
-No escribir "completado" ni "funciona" sin haberlo visto funcionar con datos reales. Decir qué se probó, cómo, y qué limitación queda.
+No escribir "completado" ni "funciona" sin haberlo visto funcionar con datos reales. Que exista el botón, compile o diga "API activa" no es prueba. Decir qué se probó, cómo, y qué limitación queda.

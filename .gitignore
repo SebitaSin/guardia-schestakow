@@ -51,3 +51,10 @@ scripts/parte-2026-09-02.py
 server/users.example.json
 server/whatsapp.local-test.mjs
 docs/personal-grupos-local.md
+
+# Credencial del laboratorio: sólo en esta PC
+server/lab-credential.local.txt
+
+# Apellidos reales confirmados a mano: sólo en esta PC
+server/photo-names.json
+Nuevo Documento de texto.txt

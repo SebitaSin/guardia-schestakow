@@ -1,4 +1,5 @@
-import { PARTE_FECHA, formatParteFecha } from "@/data/internacion";
+import { PARTE_FECHA, formatParteFecha, ocupacionPorServicio } from "@/data/internacion";
+import { boardFor } from "@/lib/boards";
 import { todayISO } from "@/data/catalog";
 
 function ageInDays() {
@@ -11,6 +12,17 @@ function ageInDays() {
 export function ParteFreshnessNotice() {
   const days = ageInDays();
   if (days === null || days <= 1) return null;
+  const servicios = ocupacionPorServicio();
+  const sinPizarra = servicios.filter((item) => !boardFor(item.slug));
+  if (!sinPizarra.length) return null;
+  if (sinPizarra.length < servicios.length) {
+    return (
+      <aside role="alert" className="rounded-xl border border-warn/50 bg-warn-soft p-3 text-sm">
+        <p className="font-semibold">{sinPizarra.length} de {servicios.length} servicios sin pizarra nueva</p>
+        <p className="mt-1">Esos servicios siguen con el parte del {formatParteFecha()} y no representan la ocupación actual: {sinPizarra.map((item) => item.name).join(", ")}.</p>
+      </aside>
+    );
+  }
 
   return (
     <aside role="alert" className="rounded-xl border border-danger/50 bg-danger/10 p-3 text-sm">

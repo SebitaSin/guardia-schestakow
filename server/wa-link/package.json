@@ -1,0 +1,10 @@
+{
+  "name": "guardia-wa-link",
+  "private": true,
+  "type": "module",
+  "description": "Recepcion de fotos de pizarras como dispositivo vinculado del WhatsApp del hospital. Solo recibe: nunca envia ni marca como leido.",
+  "dependencies": {
+    "baileys": "7.0.0-rc14",
+    "qrcode-terminal": "0.12.0"
+  }
+}
