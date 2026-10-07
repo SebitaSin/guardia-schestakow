@@ -136,7 +136,7 @@
       token: state.token, nombre: $("nombre").value, servicio: $("servicio").value, rol: $("rol").value, ayuda: Object.keys(ayuda).filter(function (key) { return key !== "ninguno"; }), address: $("address").value, phone: $("phone").value,
       transportMode: state.mode, vehiculoSeguro: safe, dispuesto: safe && state.dispuesto === "si", lugares: Number(state.lugares), necesitaTraslado: !safe && state.necesita === "si"
     }).then(function (data) {
-      if (data.revision) $("listo-p").textContent = "Recibimos tus datos. Como cambió el celular o no figurabas en la nómina, la Dirección los revisa antes de darlos por confirmados.";
+      if (data.revision) $("listo-p").textContent = "Recibimos tus datos. Como cambió algún dato respecto de lo que teníamos, la Dirección los revisa antes de darlos por confirmados.";
       var p = data.progreso;
       if (p && p.total) {
         $("prog").hidden = false;

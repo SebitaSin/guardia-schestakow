@@ -168,7 +168,7 @@ export function createAutogestion({ dataDir, secret, maps = { serverKey: "" }, f
     const pending = Object.keys(review).length > 0;
     mutate((store) => {
       const before = store.respuestas[staffId];
-      store.respuestas[staffId] = { en: new Date(now()).toISOString(), verificado: trusted, veces: (before?.veces ?? 0) + 1, ubicado: Boolean(point), ayuda: data.ayuda ?? [], declaracion: { transportMode: data.transportMode, vehiculoSeguro: data.vehiculoSeguro, dispuesto: data.dispuesto, lugares: data.lugares, necesitaTraslado: data.necesitaTraslado } };
+      store.respuestas[staffId] = { ...(before?.alta ? { alta: true } : {}), en: new Date(now()).toISOString(), verificado: trusted && !before?.alta, veces: (before?.veces ?? 0) + 1, ubicado: Boolean(point), ayuda: data.ayuda ?? [], declaracion: { transportMode: data.transportMode, vehiculoSeguro: data.vehiculoSeguro, dispuesto: data.dispuesto, lugares: data.lugares, necesitaTraslado: data.necesitaTraslado } };
       store.pendientes = store.pendientes.filter((item) => item.staffId !== staffId);
       if (pending) store.pendientes.push({ id: randomBytes(8).toString("hex"), tipo: "cambio", staffId, nombre: contact.name ?? "", servicio: contact.service ?? "", datos: data, campos: Object.keys(review), en: new Date(now()).toISOString() });
     });
@@ -221,13 +221,18 @@ export function createAutogestion({ dataDir, secret, maps = { serverKey: "" }, f
         const nombre = String(body.nombre ?? "").replace(/\s+/g, " ").trim();
         const servicio = data.servicio;
         if (nombre.length < 5 || nombre.length > 160) throw new Error("nombre");
-        pending = true;
+        // Alta directa (pedido de Sebastián, 7/10/2026): quien no figura en la nómina entra igual, en el servicio que declara.
+        // Queda marcado como "alta" sin verificar para que Dirección sepa que el dato lo cargó la propia persona.
+        const staffId = `autogestion--${current.dni}`;
+        if (readPrivateContacts(dataDir, secret).filter((item) => String(item.staffId).startsWith("autogestion--")).length >= 3_000) throw new Error("limite");
+        upsertPrivateContact(dataDir, secret, { staffId, name: nombre, service: servicio, role: data.rol, dni: current.dni, address: data.address, phone: data.phone, transportMode: data.transportMode }, ACTOR);
+        await apply(staffId, data, false);
         mutate((store) => {
-          if (store.pendientes.length >= 3_000) throw new Error("limite");
           store.pendientes = store.pendientes.filter((item) => item.dni !== current.dni);
-          store.pendientes.push({ id: randomBytes(8).toString("hex"), tipo: "nueva", dni: current.dni, nombre, servicio, datos: data, campos: ["persona"], en: new Date(now()).toISOString() });
+          if (store.respuestas[staffId]) Object.assign(store.respuestas[staffId], { verificado: false, alta: true });
         });
-        appendAudit(dataDir, { actor: ACTOR, action: "autogestion_persona_fuera_de_nomina", kind: "staff_self_report" });
+        service = servicio;
+        appendAudit(dataDir, { actor: ACTOR, action: "autogestion_alta_directa", kind: "staff_self_report", staffId });
       }
       sessions.delete(String(body.token));
       return { ok: true, revision: pending, progreso: progress(readPrivateContacts(dataDir, secret), service) };

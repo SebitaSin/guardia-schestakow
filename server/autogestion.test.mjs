@@ -109,18 +109,24 @@ test("escribir el mismo celular registrado alcanza como prueba: el domicilio nue
   } finally { t.done(); }
 });
 
-test("un DNI fuera de la nómina queda pendiente y recién entra cuando Dirección lo acepta", async () => {
+test("un DNI fuera de la nómina entra directo al servicio que declara, una sola vez y marcado como alta sin verificar", async () => {
   const t = setup();
   try {
     const found = await t.call("buscar", { dni: "40111222" });
     assert.deepEqual([found.encontrado, found.servicios], [false, ["UTI"]]);
     assert.equal((await t.call("guardar", { token: found.token, ...answer })).status, 400); // falta nombre
-    for (let i = 0; i < 2; i += 1) await t.call("guardar", { token: (i ? await t.call("buscar", { dni: "40111222" }) : found).token, ...answer, nombre: "GOMEZ LUIS" });
-    assert.equal(readPrivateContacts(t.dataDir, SECRET).length, 2);
-    const estado = t.auto.estado();
-    assert.deepEqual([estado.pendientes.length, estado.pendientes[0].tipo], [1, "nueva"]);
-    await t.auto.resolver({ id: estado.pendientes[0].id, accion: "aceptar" }, "direccion");
-    assert.equal(readPrivateContacts(t.dataDir, SECRET).some((item) => item.staffId === "autogestion--40111222" && item.name === "GOMEZ LUIS"), true);
+    const first = await t.call("guardar", { token: found.token, ...answer, nombre: "GOMEZ LUIS" });
+    assert.equal(first.revision, false);
+    const again = await t.call("buscar", { dni: "40111222" });
+    assert.equal(again.encontrado, true);
+    await t.call("guardar", { token: again.token, ...answer });
+    const contacts = readPrivateContacts(t.dataDir, SECRET);
+    assert.equal(contacts.length, 3); // una fila por persona real: la segunda vez no se duplica
+    const nuevo = contacts.find((item) => item.staffId === "autogestion--40111222");
+    assert.deepEqual([nuevo.name, nuevo.service, nuevo.dni], ["GOMEZ LUIS", answer.servicio, "40111222"]);
+    assert.equal(t.auto.estado().pendientes.length, 0);
+    assert.equal(readAutogestion(t.dataDir, SECRET).respuestas["autogestion--40111222"].alta, true);
+    assert.equal(readAutogestion(t.dataDir, SECRET).respuestas["autogestion--40111222"].verificado, false);
   } finally { t.done(); }
 });
 
