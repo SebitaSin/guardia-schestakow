@@ -1,7 +1,7 @@
 (function () {
   "use strict";
   var $ = function (id) { return document.getElementById(id); };
-  var STEPS = ["dni", "clave", "datos", "listo"];
+  var STEPS = ["dni", "datos", "listo"];
   var state = { token: null, found: false, mode: "", seguro: "", dispuesto: "", lugares: "1", necesita: "" };
   var ERRORS = {
     dni: "Revisá el DNI: van sólo los números, sin puntos.",
@@ -67,6 +67,7 @@
     $("nueva").hidden = state.found;
     $("datos-t").textContent = data ? "Revisá tus datos" : "Cargá tus datos";
     $("datos-p").textContent = data ? "Esto es lo que tenemos. Corregí lo que haya cambiado." : "Completá los tres datos y listo.";
+    if (!data && state.found && state.nombre) $("datos-p").textContent = "Ficha de " + state.nombre.replace(/\.$/, "") + ". Completá tus datos y listo.";
     $("address").value = data ? data.address : "";
     $("phone").value = data ? data.phone : "";
     $("servicio").value = state.servicio || "";
@@ -102,9 +103,10 @@
       $("ya").hidden = !data.yaRespondio;
       if (data.yaRespondio) $("ya").textContent = "Ya respondiste el " + new Date(data.yaRespondio).toLocaleDateString("es-AR") + ". Si volvés a guardar, se reemplaza: no se duplica.";
       $("ult4").value = "";
-      if (!data.pideClave) return openForm(null);
-      show("clave");
-      $("ult4").focus();
+      // Sin paso de los 4 números del celular (pedido de Sebastián, 7/10/2026): DNI y directo a cargar.
+      // Lo que cambie respecto de la nómina sigue quedando "a revisar" si el teléfono escrito no coincide.
+      state.nombre = data.nombre || "";
+      return openForm(null);
     }).catch(function (error) { fail(error.message); }).then(function () { busy(form, false); });
   });
 
