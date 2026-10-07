@@ -42,7 +42,9 @@ const CRITICOS = new Set(["terapia-intensiva", "uco", "uciq", "uccyq", "tip", "n
 const GUARDIA = new Set(["cirugia", "pediatria"]);
 const GUARDIA_NAMES: Record<string, string> = { cirugia: "Guardia de Cirugía", pediatria: "Guardia de Pediatría" };
 // Servicios que tienen que estar siempre a la vista, aunque nunca haya llegado una planilla suya.
-const ALWAYS_SHOWN = ["guardia-clinica", "cirugia", "pediatria", "terapia-intensiva", "uco", "uciq", "uccyq", "tip", "neonatologia"];
+const ALWAYS_SHOWN = ["guardia-clinica", "cirugia", "pediatria", "terapia-intensiva", "uco", "uccyq", "tip", "neonatologia"];
+// "UCIQ" no existe como servicio del hospital: es UCCyQ (aclaración de Sebastián, 7/10/2026). No se muestra.
+const HIDDEN = new Set(["uciq"]);
 const INFRA = new Set(["albergue", "mantenimiento", "mensajeria", "movilidad", "porteria"]);
 const APOYO = new Set(["esterilizacion", "kinesiologia"]);
 const SECTIONS = [
@@ -148,6 +150,7 @@ function Home() {
       if (!dept || groups.has(slug) || (needle && !`${dept.name} ${dept.short} ${GUARDIA_NAMES[slug] ?? ""}`.toLocaleLowerCase("es").includes(needle))) continue;
       groups.set(slug, { slug, name: dept.name, section: sectionOf(dept), docId: null, entries: [], blanks: 1, raw: "", photo: false });
     }
+    for (const slug of HIDDEN) groups.delete(slug);
     for (const group of groups.values()) group.name = GUARDIA_NAMES[group.slug] ?? group.name;
     for (const group of groups.values()) group.entries.sort((a, b) => Number(isNow(b.kind)) - Number(isNow(a.kind)));
     return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, "es"));

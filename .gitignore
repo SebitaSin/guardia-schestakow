@@ -58,3 +58,6 @@ server/lab-credential.local.txt
 # Apellidos reales confirmados a mano: sólo en esta PC
 server/photo-names.json
 Nuevo Documento de texto.txt
+
+# Programa de túnel (55 MB): se baja en cada PC, no se sube
+tools/cloudflared.exe
