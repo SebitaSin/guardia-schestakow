@@ -8,5 +8,9 @@
   "AI_INPUT_USD_PER_MILLION": "0.75",
   "AI_OUTPUT_USD_PER_MILLION": "4.50",
   "AI_ALLOW_SCHEDULE_PHOTOS": "true",
-  "AI_WEATHER_BRIEF": "true"
+  "AI_WEATHER_BRIEF": "true",
+  "AI_BOARD_EFFORT": "low",
+  "AI_BOARD_SCHEMA": "largo",
+  "AI_BRIEF_MODEL": "gpt-6-luna",
+  "AI_COMPARE": "true"
 }

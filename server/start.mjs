@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { mkdirSync } from "node:fs";
-import { readJson, writeJsonAtomic } from "./store.mjs";
+import { appendAudit, readJson, writeJsonAtomic } from "./store.mjs";
 import { verifyOpenAi } from "./ai.mjs";
 import { createWaLink } from "./wa-link/supervisor.mjs";
 import { createLabLookup } from "./lab-lookup.mjs";
@@ -43,6 +43,8 @@ weatherTimer.unref();
 setTimeout(() => { weatherWatch.refresh().catch(() => undefined); }, 15_000).unref();
 const server = createHospitalServer({ distDir, dataDir, catalogFile, internacionFile, authConfig, waConfig: whatsappConfig(), ai: aiConfig(), maps: mapsConfig(), mailRunner, photoIntake, weatherWatch });
 photoIntake.start();
+// Prueba de modelos de IA, sólo si se pidió en ai-config.json: corre una vez, en segundo plano, y no cambia lo publicado.
+if (String(process.env.AI_COMPARE ?? "").toLowerCase() === "true") setTimeout(() => { import("./ai-compare.mjs").then((mod) => mod.runComparison({ dataDir, config: aiConfig(), internacionFile })).then((result) => appendAudit(dataDir, { actor: "system", action: "ai_model_comparison", kind: "system", ok: result.ok, repetida: Boolean(result.repetida), motivo: result.motivo ?? null })).catch((error) => appendAudit(dataDir, { actor: "system", action: "ai_model_comparison_failed", kind: "system", error: String(error?.message ?? "error").slice(0, 80) })); }, 45_000).unref();
 waLink.start();
 if (aiConfig().enabled) verifyOpenAi(aiConfig()).then((result) => writeJsonAtomic(resolve(dataDir, "ai", "status.json"), { ...result, at: new Date().toISOString() })).catch(() => undefined);
 const stopSchedule = scheduleMailSync(mailRunner);

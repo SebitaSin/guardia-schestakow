@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { readJson, writeJsonAtomic } from "./store.mjs";
-import { addUsage, aiDay } from "./ai.mjs";
+import { addUsage, aiDay, openAiResponses, usageOf } from "./ai.mjs";
 import { RADAR_URL, analyzeRadar, radarAlerts } from "./radar-dacc.mjs";
 
 export const HOSPITAL = { lat: -34.6177, lon: -68.3301, nombre: "San Rafael, Mendoza" };
@@ -389,17 +389,20 @@ export function createWeatherWatch({ dataDir, fetchImpl = fetch, env = process.e
     // Tope diario: el parte de clima sólo usa hasta la mitad; el resto queda para leer fotos de pizarras, que importan más.
     const daily = Number(env.AI_DAILY_BUDGET_USD ?? 0);
     if (daily > 0 && (usage.dias?.[aiDay(now())] ?? 0) > daily / 2) return previous ?? null;
-    const response = await fetchImpl("https://api.openai.com/v1/responses", {
-      method: "POST", headers: { authorization: `Bearer ${env.OPENAI_API_KEY}`, "content-type": "application/json" }, signal: AbortSignal.timeout(45_000),
-      body: JSON.stringify({ model: env.OPENAI_MODEL, store: false, reasoning: { effort: "low" }, max_output_tokens: 1200,
-        input: `Sos el meteorólogo de guardia de un hospital público de San Rafael, Mendoza. Con estos datos (alertas oficiales del SMN, alertas calculadas sobre el pronóstico y estado de El Niño) escribí un parte en español rioplatense de no más de 90 palabras: qué se espera y cuándo, y después hasta tres acciones concretas para preparar el hospital (personal, energía, accesos, ambulancias, insumos). No inventes datos ni horarios que no estén acá. No uses listas ni títulos.\n\n${JSON.stringify(facts)}` }),
-    });
-    if (!response.ok) throw new Error(`openai_http_${response.status}`);
-    const raw = await response.json();
+    // Es sólo redacción sobre datos ya calculados: va con el modelo más económico y sin razonamiento. Si la cuenta
+    // no lo tiene habilitado (error 400/403/404), se usa el modelo general de la app.
+    const prompt = `Sos el meteorólogo de guardia de un hospital público de San Rafael, Mendoza. Con estos datos (alertas oficiales del SMN, alertas calculadas sobre el pronóstico y estado de El Niño) escribí un parte en español rioplatense de no más de 90 palabras: qué se espera y cuándo, y después hasta tres acciones concretas para preparar el hospital (personal, energía, accesos, ambulancias, insumos). No inventes datos ni horarios que no estén acá. No uses listas ni títulos.\n\n${JSON.stringify(facts)}`;
+    const ask = (model, effort) => openAiResponses({ apiKey: env.OPENAI_API_KEY, fetchImpl, timeoutMs: 45_000, body: { model, store: false, reasoning: { effort }, max_output_tokens: effort === "none" ? 250 : 1200, input: prompt } });
+    let model = env.AI_BRIEF_MODEL || "gpt-6-luna", answer;
+    try { answer = await ask(model, "none"); }
+    catch (error) {
+      if (!/^openai_http_(400|403|404)$/.test(String(error?.message)) || model === env.OPENAI_MODEL) throw error;
+      model = env.OPENAI_MODEL; answer = await ask(model, "low");
+    }
+    const raw = answer.raw;
     const text = (raw.output ?? []).flatMap((item) => item.content ?? []).find((item) => item.type === "output_text")?.text?.trim() ?? "";
-    const input = Number(raw.usage?.input_tokens ?? 0), output = Number(raw.usage?.output_tokens ?? 0);
-    writeJsonAtomic(usagePath, addUsage(readJson(usagePath, usage), { inputTokens: input, outputTokens: output, estimatedUsd: input * Number(env.AI_INPUT_USD_PER_MILLION ?? 0) / 1e6 + output * Number(env.AI_OUTPUT_USD_PER_MILLION ?? 0) / 1e6 }, now()));
-    return text ? { firma, en: now().toISOString(), texto: text, modelo: env.OPENAI_MODEL } : previous ?? null;
+    writeJsonAtomic(usagePath, addUsage(readJson(usagePath, usage), { ...usageOf(raw, model, { inputRate: Number(env.AI_INPUT_USD_PER_MILLION ?? 0), outputRate: Number(env.AI_OUTPUT_USD_PER_MILLION ?? 0) }), tarea: "parte_clima", modelo: model }, now()));
+    return text ? { firma, en: now().toISOString(), texto: text, modelo: model } : previous ?? null;
   }
 
   async function refresh() {
