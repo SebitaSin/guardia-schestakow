@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, readdirSync, statSync, watch } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { appendAudit, readJson, writeJsonAtomic } from "./store.mjs";
 import { saveManualCapture, storedCaptures } from "./capture.mjs";
-import { aiReady, analyzeBoardImage, cachedReading } from "./ai.mjs";
+import { aiReady, analyzeBoardImage, cachedReading, aiBudgetAllows } from "./ai.mjs";
 import { processedCaptures, publishReading, recheckBoards, shouldRetry } from "./boards.mjs";
 import { matchTemplate } from "./board-templates.mjs";
 
@@ -134,6 +134,7 @@ export function createPhotoIntake({ root, dataDir, ai = { enabled: false }, env 
         let reading = cachedReading(dataDir, item.hash);
         if (!reading) {
           if (!aiReady(ai) || (attempts.get(item.hash) ?? 0) >= 3) continue;
+          if (!aiBudgetAllows(dataDir, ai)) { state.waitingBudget = new Date().toISOString(); continue; } // no cuenta como intento: se lee cuando haya saldo
           attempts.set(item.hash, (attempts.get(item.hash) ?? 0) + 1);
           try {
             reading = await analyzeBoardImage({ imagePath: item.path, sourceHash: item.hash, dataDir, config: ai, fetchImpl });

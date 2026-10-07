@@ -43,3 +43,18 @@ test("board analysis is structured, cached and charged once per image hash", asy
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("tope diario de IA: corta antes de pasarse y vuelve a habilitar al día siguiente", async () => {
+  const { addUsage, aiDay, dailyBudgetAllows } = await import("./ai.mjs");
+  const monday = new Date("2026-10-07T12:00:00-03:00"), late = new Date("2026-10-07T23:30:00-03:00"), tuesday = new Date("2026-10-08T00:30:00-03:00");
+  assert.deepEqual([aiDay(monday), aiDay(late), aiDay(tuesday)], ["2026-10-07", "2026-10-07", "2026-10-08"]);
+  let usage = { calls: 0, inputTokens: 0, outputTokens: 0, estimatedUsd: 0 };
+  let made = 0;
+  while (dailyBudgetAllows(usage, 0.10, monday)) { usage = addUsage(usage, { inputTokens: 3000, outputTokens: 1900, estimatedUsd: 0.011 }, monday); made += 1; }
+  assert.equal(made, 9);
+  assert.ok(usage.dias["2026-10-07"] <= 0.10);
+  assert.equal(dailyBudgetAllows(usage, 0.10, late), false);
+  assert.equal(dailyBudgetAllows(usage, 0.10, tuesday), true);
+  assert.equal(dailyBudgetAllows(usage, 0, monday), true); // sin tope diario
+  assert.deepEqual([usage.calls, Math.round(usage.estimatedUsd * 1000)], [9, 99]);
+});

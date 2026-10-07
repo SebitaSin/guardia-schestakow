@@ -34,6 +34,7 @@ export function aiConfig(env = process.env) {
     model: String(env.OPENAI_MODEL ?? ""),
     budgetUsd: Number(env.AI_MONTHLY_BUDGET_USD ?? 0),
     callLimit: Number(env.AI_MONTHLY_CALL_LIMIT ?? 0),
+    dailyUsd: Number(env.AI_DAILY_BUDGET_USD ?? 0), // tope de gasto por día; 0 = sin tope diario
     inputRate: Number(env.AI_INPUT_USD_PER_MILLION ?? 0),
     outputRate: Number(env.AI_OUTPUT_USD_PER_MILLION ?? 0),
   };
@@ -68,6 +69,28 @@ export function cachedReading(dataDir, sourceHash) {
   return cached?.promptVersion === PROMPT_VERSION ? cached : null;
 }
 function monthKey(date = new Date()) { return date.toISOString().slice(0, 7); }
+/** Día de Mendoza (UTC-3) al que se imputa un gasto. */
+export const aiDay = (date = new Date()) => new Date(date.getTime() - 3 * 3_600_000).toISOString().slice(0, 10);
+/** Suma una llamada al registro del mes, guardando también cuánto se gastó cada día. */
+export function addUsage(usage, call, date = new Date()) {
+  const day = aiDay(date);
+  const dias = { ...(usage.dias ?? {}) };
+  dias[day] = (dias[day] ?? 0) + call.estimatedUsd;
+  return { calls: (usage.calls ?? 0) + 1, inputTokens: (usage.inputTokens ?? 0) + call.inputTokens, outputTokens: (usage.outputTokens ?? 0) + call.outputTokens, estimatedUsd: (usage.estimatedUsd ?? 0) + call.estimatedUsd, dias };
+}
+/**
+ * ¿Entra una llamada más en el tope de hoy? Se cuenta lo gastado hoy más lo que cuesta una llamada promedio del mes
+ * (1,2 centavos si todavía no hay historia), para no pasarse del tope con la última.
+ */
+export function dailyBudgetAllows(usage, dailyUsd, date = new Date()) {
+  if (!(dailyUsd > 0)) return true;
+  const typical = usage.calls > 0 ? usage.estimatedUsd / usage.calls : 0.012;
+  return (usage.dias?.[aiDay(date)] ?? 0) + typical <= dailyUsd;
+}
+export function aiBudgetAllows(dataDir, config, date = new Date()) {
+  const usage = readJson(join(dataDir, "ai", `usage-${monthKey(date)}.json`), { calls: 0, inputTokens: 0, outputTokens: 0, estimatedUsd: 0 });
+  return usage.calls < config.callLimit && usage.estimatedUsd < config.budgetUsd && dailyBudgetAllows(usage, config.dailyUsd, date);
+}
 let aiQueue = Promise.resolve();
 function outputText(response) {
   return (response.output ?? []).flatMap((item) => item.content ?? []).find((item) => item.type === "output_text")?.text ?? "";
@@ -87,6 +110,7 @@ async function analyzeBoardImageOnce({ imagePath, sourceHash, dataDir, config, f
   const usagePath = join(dataDir, "ai", `usage-${monthKey()}.json`);
   const usage = readJson(usagePath, { calls: 0, inputTokens: 0, outputTokens: 0, estimatedUsd: 0 });
   if (usage.calls >= config.callLimit || usage.estimatedUsd >= config.budgetUsd) throw new Error("ai_monthly_budget_reached");
+  if (!dailyBudgetAllows(usage, config.dailyUsd)) throw new Error("ai_daily_budget_reached");
   const bytes = readFileSync(imagePath);
   if (!bytes.length || bytes.length > 15 * 1024 * 1024) throw new Error("image_size_invalid");
   const response = await fetchImpl("https://api.openai.com/v1/responses", {
@@ -115,7 +139,7 @@ async function analyzeBoardImageOnce({ imagePath, sourceHash, dataDir, config, f
   const estimatedUsd = inputTokens * config.inputRate / 1_000_000 + outputTokens * config.outputRate / 1_000_000;
   const result = { sourceHash, promptVersion: PROMPT_VERSION, status: "A_CONFIRMAR", model: config.model, rows: parsed.rows, generalObservations: parsed.general_observations, usage: { inputTokens, outputTokens, estimatedUsd }, createdAt: new Date().toISOString(), cached: false };
   writeJsonAtomic(cachePath, result);
-  writeJsonAtomic(usagePath, { calls: usage.calls + 1, inputTokens: usage.inputTokens + inputTokens, outputTokens: usage.outputTokens + outputTokens, estimatedUsd: usage.estimatedUsd + estimatedUsd });
+  writeJsonAtomic(usagePath, addUsage(readJson(usagePath, usage), { inputTokens, outputTokens, estimatedUsd }));
   return result;
 }
 
@@ -127,5 +151,5 @@ export function analyzeBoardImage(args) {
 
 export function aiUsageStatus(dataDir, config, date = new Date()) {
   const usage = readJson(join(dataDir, "ai", `usage-${monthKey(date)}.json`), { calls: 0, inputTokens: 0, outputTokens: 0, estimatedUsd: 0 });
-  return { month: monthKey(date), ...usage, callLimit: Number(config.callLimit || 0), budgetUsd: Number(config.budgetUsd || 0) };
+  return { month: monthKey(date), ...usage, callLimit: Number(config.callLimit || 0), budgetUsd: Number(config.budgetUsd || 0), dayUsd: usage.dias?.[aiDay(date)] ?? 0, dailyBudgetUsd: Number(config.dailyUsd || 0) };
 }

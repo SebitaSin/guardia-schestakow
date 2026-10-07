@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { readJson, writeJsonAtomic } from "./store.mjs";
+import { addUsage, aiDay } from "./ai.mjs";
 import { RADAR_URL, analyzeRadar, radarAlerts } from "./radar-dacc.mjs";
 
 export const HOSPITAL = { lat: -34.6177, lon: -68.3301, nombre: "San Rafael, Mendoza" };
@@ -385,6 +386,9 @@ export function createWeatherWatch({ dataDir, fetchImpl = fetch, env = process.e
     const usagePath = join(dataDir, "ai", `usage-${now().toISOString().slice(0, 7)}.json`);
     const usage = readJson(usagePath, { calls: 0, inputTokens: 0, outputTokens: 0, estimatedUsd: 0 });
     if (usage.estimatedUsd >= Number(env.AI_MONTHLY_BUDGET_USD ?? 0) || usage.calls >= Number(env.AI_MONTHLY_CALL_LIMIT ?? 0)) return previous ?? null;
+    // Tope diario: el parte de clima sólo usa hasta la mitad; el resto queda para leer fotos de pizarras, que importan más.
+    const daily = Number(env.AI_DAILY_BUDGET_USD ?? 0);
+    if (daily > 0 && (usage.dias?.[aiDay(now())] ?? 0) > daily / 2) return previous ?? null;
     const response = await fetchImpl("https://api.openai.com/v1/responses", {
       method: "POST", headers: { authorization: `Bearer ${env.OPENAI_API_KEY}`, "content-type": "application/json" }, signal: AbortSignal.timeout(45_000),
       body: JSON.stringify({ model: env.OPENAI_MODEL, store: false, reasoning: { effort: "low" }, max_output_tokens: 1200,
@@ -394,7 +398,7 @@ export function createWeatherWatch({ dataDir, fetchImpl = fetch, env = process.e
     const raw = await response.json();
     const text = (raw.output ?? []).flatMap((item) => item.content ?? []).find((item) => item.type === "output_text")?.text?.trim() ?? "";
     const input = Number(raw.usage?.input_tokens ?? 0), output = Number(raw.usage?.output_tokens ?? 0);
-    writeJsonAtomic(usagePath, { calls: usage.calls + 1, inputTokens: usage.inputTokens + input, outputTokens: usage.outputTokens + output, estimatedUsd: usage.estimatedUsd + input * Number(env.AI_INPUT_USD_PER_MILLION ?? 0) / 1e6 + output * Number(env.AI_OUTPUT_USD_PER_MILLION ?? 0) / 1e6 });
+    writeJsonAtomic(usagePath, addUsage(readJson(usagePath, usage), { inputTokens: input, outputTokens: output, estimatedUsd: input * Number(env.AI_INPUT_USD_PER_MILLION ?? 0) / 1e6 + output * Number(env.AI_OUTPUT_USD_PER_MILLION ?? 0) / 1e6 }, now()));
     return text ? { firma, en: now().toISOString(), texto: text, modelo: env.OPENAI_MODEL } : previous ?? null;
   }
 

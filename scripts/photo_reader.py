@@ -15,7 +15,7 @@ import os
 import tempfile
 import urllib.error
 import urllib.request
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 APP_ROOT = Path(os.environ.get("APP_ROOT", Path(__file__).resolve().parents[1])).resolve()
@@ -79,6 +79,7 @@ def config() -> dict:
     return {"enabled": get("AI_ENABLED").lower() == "true" and str(file.get("AI_ALLOW_SCHEDULE_PHOTOS", "false")).lower() == "true",
             "key": os.environ.get("OPENAI_API_KEY", ""), "model": get("OPENAI_MODEL"),
             "budget": float(get("AI_MONTHLY_BUDGET_USD", "0") or 0), "calls": int(float(get("AI_MONTHLY_CALL_LIMIT", "0") or 0)),
+            "daily": float(get("AI_DAILY_BUDGET_USD", "0") or 0),
             "in": float(get("AI_INPUT_USD_PER_MILLION", "0") or 0), "out": float(get("AI_OUTPUT_USD_PER_MILLION", "0") or 0)}
 
 
@@ -113,6 +114,11 @@ def transcribe(path: Path, digest: str, call=_call_openai, image: bytes | None =
     usage = _load(usage_path, {"calls": 0, "inputTokens": 0, "outputTokens": 0, "estimatedUsd": 0})
     if usage["calls"] >= cfg["calls"] or usage["estimatedUsd"] >= cfg["budget"]:
         return {"reason": "foto: se alcanzó el tope mensual de IA"}
+    # Tope diario compartido con las pizarras (día de Mendoza, UTC-3): si no entra una lectura más, espera a mañana.
+    day = (datetime.now(timezone.utc) - timedelta(hours=3)).strftime("%Y-%m-%d")
+    typical = usage["estimatedUsd"] / usage["calls"] if usage["calls"] else 0.012
+    if cfg.get("daily", 0) > 0 and (usage.get("dias") or {}).get(day, 0) + typical > cfg["daily"]:
+        return {"reason": "foto: se alcanzó el tope diario de IA; se lee mañana"}
     image = image if image is not None else path.read_bytes()
     if not image or len(image) > MAX_BYTES:
         return {"reason": "foto: tamaño de imagen no admitido"}
@@ -123,8 +129,11 @@ def transcribe(path: Path, digest: str, call=_call_openai, image: bytes | None =
     except Exception as exc:
         return {"reason": f"foto: no se pudo consultar la IA ({type(exc).__name__})"}
     cost = tokens_in * cfg["in"] / 1_000_000 + tokens_out * cfg["out"] / 1_000_000
+    usage = _load(usage_path, usage)
+    dias = dict(usage.get("dias") or {})
+    dias[day] = dias.get(day, 0) + cost
     _save(usage_path, {"calls": usage["calls"] + 1, "inputTokens": usage["inputTokens"] + tokens_in,
-                       "outputTokens": usage["outputTokens"] + tokens_out, "estimatedUsd": usage["estimatedUsd"] + cost})
+                       "outputTokens": usage["outputTokens"] + tokens_out, "estimatedUsd": usage["estimatedUsd"] + cost, "dias": dias})
     result = {"promptVersion": PROMPT_VERSION, "model": cfg["model"], "at": datetime.now().astimezone().isoformat(timespec="seconds"),
               "usage": {"inputTokens": tokens_in, "outputTokens": tokens_out, "estimatedUsd": cost}, "reading": parsed}
     _save(cache_path, result)
