@@ -200,7 +200,26 @@ export function alertLevel(state, nowMs = Date.now()) {
     alert.grado = gradeOf(gravedad, certeza);
     motivos.push({ grado: alert.grado, origen: "SMN", texto: `${alert.evento}${certeza === 3 ? " (confirmado por el radar)" : ""}` });
   }
-  for (const alert of radarAlerts) motivos.push({ grado: alert.grado ?? 3, origen: "Radar", texto: alert.titulo });
+  // El radar solo no alcanza para alertar por granizo (decisión de Sebastián, 7/10/2026): un eco intenso tiene que
+  // estar acompañado por otro dato de alarma para San Rafael. Sin eso, una celda lejana queda como "atención" (grado 2,
+  // sin alerta) y una tormenta extensa sobre la ciudad no pasa de vigilancia (grado 3).
+  const near = (alert) => { const start = hoursTo(alert.desde), end = hoursTo(alert.hasta ?? alert.desde); return start <= 6 && end >= -1; };
+  const apoyo = [];
+  if ((state.oficial?.datos?.alertas ?? []).some((alert) => alert.alcance === "LOCAL" && near(alert))) apoyo.push("alerta del SMN para la zona");
+  if ((state.pronostico?.datos?.alertas ?? []).some((alert) => ["tormenta", "granizo", "lluvia"].includes(alert.tipo) && near(alert))) apoyo.push("pronóstico de tormenta");
+  if ((state.hidro?.datos?.lluvia ?? []).some((item) => item.lectura && item.km <= 45 && item.lectura.hace_h <= 6 && item.lectura.mm_3h >= 10)) apoyo.push("lluvia fuerte medida cerca");
+  if (state.radar?.datos) {
+    for (const alert of radarAlerts) {
+      const city = / sobre San Rafael/.test(alert.titulo);
+      if (apoyo.length) alert.detalle = `${alert.detalle}. Coincide con: ${apoyo.join(", ")}`;
+      else { alert.grado = city ? Math.min(alert.grado ?? 3, 3) : 2; alert.detalle = `${alert.detalle}. Sólo lo marca el radar: ni el SMN, ni el pronóstico, ni los pluviómetros lo acompañan`; if (city && /ranizo/.test(alert.titulo)) alert.titulo = "Eco muy intenso sobre San Rafael, sin otra señal que lo confirme"; }
+      alert.nivel = colorOf(alert.grado);
+      motivos.push({ grado: alert.grado, origen: "Radar", texto: alert.titulo });
+    }
+    state.radar.datos.menores = radarAlerts.filter((alert) => alert.grado <= 2);
+    state.radar.datos.alertas = radarAlerts.filter((alert) => alert.grado > 2);
+    state.radar.datos.apoyo = apoyo;
+  }
   for (const alert of state.sismos?.datos?.alertas ?? []) motivos.push({ grado: alert.grado ?? 3, origen: "Sismo", texto: alert.titulo });
   for (const alert of state.hidro?.datos?.alertas ?? []) motivos.push({ grado: alert.grado, origen: "Medición INA", texto: alert.titulo });
   const forecast = state.pronostico?.datos;

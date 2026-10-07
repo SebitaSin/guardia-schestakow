@@ -142,3 +142,28 @@ test("mediciones del INA: tendencia del río, lluvia caída y descarte de un plu
   const level = alertLevel({ oficial: { ok: true, datos: { alertas: [] } }, pronostico: { ok: true, datos: { alertas: [] } }, radar: { ok: true, datos: { vigente: true, alertas: [] } }, hidro: { ok: true, datos: { alertas: hydroAlerts(datos) } } }, NOW);
   assert.deepEqual([level.grado, level.motivos[0].origen], [4, "Medición INA"]);
 });
+
+test("el radar solo no alerta por granizo: necesita otro dato de alarma para San Rafael", () => {
+  const ok = (datos) => ({ ok: true, datos });
+  const NOW = Date.parse("2026-10-07T04:06:00-03:00");
+  const cell = () => ({ tipo: "radar", grado: 6, nivel: "naranja", titulo: "Celda con posible granizo a 30 km al O, viene hacia la ciudad", detalle: "Eco de 60 dBZ", desde: "2026-10-07T07:06:00Z", hasta: "2026-10-07T07:06:00Z" });
+  const hail = () => ({ tipo: "radar", grado: 7, nivel: "rojo", titulo: "Granizo probable sobre San Rafael", detalle: "3 km² con 60 dBZ", desde: "2026-10-07T07:06:00Z", hasta: "2026-10-07T07:06:00Z" });
+  const state = (radar, extra = {}) => ({ oficial: ok({ alertas: [] }), pronostico: ok({ alertas: [] }), radar: ok({ vigente: true, alertas: radar }), ...extra });
+  // Lo que pasó el 7/10 a las 04:06: una celda a 30 km, sin nada más. Antes daba naranja (6); ahora no es alerta.
+  const alone = state([cell()]);
+  const level = alertLevel(alone, NOW);
+  assert.deepEqual([level.grado, level.color, alone.radar.datos.alertas.length, alone.radar.datos.menores.length], [2, "verde", 0, 1]);
+  assert.match(alone.radar.datos.menores[0].detalle, /Sólo lo marca el radar/);
+  // Eco muy intenso sobre la ciudad pero sin compañía: vigilancia, no emergencia.
+  const cityAlone = state([hail()]);
+  assert.deepEqual([alertLevel(cityAlone, NOW).grado, cityAlone.radar.datos.alertas[0].titulo, cityAlone.radar.datos.alertas[0].nivel], [3, "Eco muy intenso sobre San Rafael, sin otra señal que lo confirme", "amarillo"]);
+  // Con alerta local del SMN vigente, con pronóstico de tormenta en las próximas horas o con lluvia fuerte medida: vale el grado del radar.
+  const smn = { alcance: "LOCAL", nivel: "amarillo", evento: "Tormentas", desde: "2026-10-07T00:00:00-03:00", hasta: "2026-10-07T12:00:00-03:00", certeza: "Likely" };
+  assert.equal(alertLevel(state([cell()], { oficial: ok({ alertas: [smn] }) }), NOW).grado, 6);
+  const withSmn = state([hail()], { oficial: ok({ alertas: [{ ...smn }] }) });
+  assert.deepEqual([alertLevel(withSmn, NOW).grado, withSmn.radar.datos.apoyo], [7, ["alerta del SMN para la zona"]]);
+  assert.equal(alertLevel(state([cell()], { pronostico: ok({ alertas: [{ tipo: "granizo", nivel: "naranja", titulo: "Riesgo de granizo", desde: "2026-10-07T06:00", hasta: "2026-10-07T09:00" }] }) }), NOW).grado, 6);
+  assert.equal(alertLevel(state([cell()], { pronostico: ok({ alertas: [{ tipo: "granizo", nivel: "naranja", titulo: "Riesgo de granizo", desde: "2026-10-08T18:00", hasta: "2026-10-08T21:00" }] }) }), NOW).motivos.find((m) => m.origen === "Radar").grado, 2); // pronóstico para mañana no acompaña a una celda de ahora
+  assert.equal(alertLevel(state([cell()], { hidro: ok({ alertas: [], lluvia: [{ km: 25, lectura: { hace_h: 2, mm_3h: 14 } }] }) }), NOW).grado, 6);
+  assert.equal(alertLevel(state([cell()], { oficial: ok({ alertas: [{ ...smn, alcance: "REGIONAL" }] }) }), NOW).grado, 2); // una alerta a 100 km no acompaña
+});
